@@ -1,23 +1,25 @@
-# beancount bot
+# Beancount Bot
 
-Using telegram bot to add transactions to your beancount file.
+This is a Telegram bot that allows you to add transactions to your Beancount file.
 
 ## Steps
 
-1. @BotFather new bot and get token.
-2. @userinfobot get your UserID.
-3. `cp config-example.py config.py`, update config using your own value.
-4. `pip install -r requirements.txt`
-6. `python beanbot.py`
+1. Create a new bot with @BotFather and obtain its token.
+2. Obtain your UserID with @userinfobot.
+3. Copy the config-example.py file to config.py and update the config file with your own values.
+4. Install the required packages with `pip install -r requirements.txt`.
+5. Run the bot with `python beanbot.py`.
 
 ## Usage
 
-Message to the bot, reply genereted transactions or error information.
+Message the bot and it will reply with the generated transactions or error information.
 
-### message format
+### Message format
+
+The message format that the bot accepts is as follows:
 
 `account_from amount account_to note`
 
-- Variable `account_from` or `account_to` will be used as query to your accounts.
-- The first 3 variables must be split with `Space`, the left string will be `note`, can be empty.
-- Any generated transactions unsure will be marked as `!`
+- The `account_from` and `account_to` variables will be used as a query to your accounts.
+- The first three variables must be separated by a space, and the remaining string will be treated as the note and can be left empty.
+- Transactions that the bot is unsure about will be marked with an exclamation mark `!`.
