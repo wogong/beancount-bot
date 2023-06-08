@@ -118,7 +118,7 @@ async def bean(update: Update, context: CustomContext) -> None:
     {account_from} {amount} CNY
     {account_to}
 """
-        with open(BEANCOUNT_ROOT, 'a+') as f:
+        with open(BEANCOUNT_OUTPUT, 'a+') as f:
             f.write(transactions)
         print(transactions)
         response = transactions
