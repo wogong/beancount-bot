@@ -106,7 +106,7 @@ async def bean(update: Update, context: CustomContext) -> None:
     message = update.message.text
     accounts = context.bot_data.accounts
     try:
-        _from, _amount, _to, *note = message.split(' ')
+        _from, _amount, _to, *note = message.split()
         note = ' '.join(note)
         account_from, flag_from = getaccount(_from, accounts)
         account_to, flag_to = getaccount(_to, accounts)
