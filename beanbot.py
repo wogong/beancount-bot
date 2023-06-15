@@ -17,6 +17,7 @@ bot.
 
 import logging
 from datetime import datetime
+from decimal import Decimal
 
 from beancount.loader import load_file
 from beancount.core import data
@@ -59,6 +60,8 @@ class AccountsData:
         for entry in entries:
             if isinstance(entry, data.Open):
                 self.accounts.add(entry.account)
+            if isinstance(entry, data.Close):
+                self.accounts.remove(entry.account)
         logger.info('Finished initiating accounts set.')
 
 
@@ -111,7 +114,7 @@ async def bean(update: Update, context: CustomContext) -> None:
         account_from, flag_from = getaccount(_from, accounts)
         account_to, flag_to = getaccount(_to, accounts)
         flag_mark = '!' if flag_from + flag_to > 0 else '*'
-        amount = -round(float(_amount),2)
+        amount = -Decimal(float(_amount)).quantize(Decimal('0.00'))
         date = datetime.now().strftime("%Y-%m-%d")
 
         transactions = f"""{date} {flag_mark} "" "{note}"
