@@ -1,2 +1,2 @@
-beancount
-python-telegram-bot
+beancount==2.3.5
+python-telegram-bot==20.3
