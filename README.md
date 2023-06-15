@@ -23,3 +23,9 @@ The message format that the bot accepts is as follows:
 - The `account_from` and `account_to` variables will be used as a query to your accounts.
 - The first three variables must be separated by a space, and the remaining string will be treated as the note and can be left empty.
 - Transactions that the bot is unsure about will be marked with an exclamation mark `!`.
+
+## TODO
+
+- [] unit test
+- [] docker deployment
+- [] reload beancount file
