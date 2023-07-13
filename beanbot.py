@@ -137,7 +137,10 @@ def main() -> None:
 
     """Start the bot."""
     # Create the Application and pass it your bot's token.
-    application = Application.builder().token(BOT).context_types(context_types).build()
+    if 'PROXY' in globals():
+        application = Application.builder().token(BOT).proxy_url(PROXY).get_updates_proxy_url(PROXY).build()
+    else:
+        application = Application.builder().token(BOT).context_types(context_types).build()
 
     # on different commands - answer in Telegram
     application.add_handler(CommandHandler("start", start))

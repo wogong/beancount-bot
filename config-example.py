@@ -8,3 +8,5 @@ BOT="DDD:XXX"
 CHAT_ID="XXXXXXXX"
 # placeholder string when no account is found
 PLACEHOLDER="TODO"
+# proxy for telegram bot, format 'http://USERNAME:PASSWORD@PROXY_HOST:PROXY_PORT'
+#PROXY="http://127.0.0.1:7890"
