@@ -15,6 +15,7 @@ Press Ctrl-C on the command line or send a signal to the process to stop the
 bot.
 """
 
+import re
 import logging
 from datetime import datetime
 from decimal import Decimal
@@ -90,16 +91,16 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text("Help!")
 
 
-def getaccount(search_term, accounts):
-    r = {x for x in accounts if search_term.lower() in x.lower()}
+def getaccount(base, accounts):
+    pattern = re.compile('^.*' + re.sub(':', '.*:.*', base) + '.*', re.IGNORECASE)
+    r = list(filter(pattern.match, accounts))
     n = len(r)
-    flag = '*'
     if n == 0:
         return 'TODO', 1
     elif n == 1:
-        return r.pop(), 0
+        return r[0], 0
     else:
-        return r.pop(), 1
+        return r[0], 1
 
 
 async def bean(update: Update, context: CustomContext) -> None:
