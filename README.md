@@ -30,3 +30,8 @@ The message format that the bot accepts is as follows:
 - [ ] docker deployment
 - [ ] reload beancount file
 - [x] fuzzy match
+
+## Credits
+- [beancount](https://github.com/beancount/beancount)
+- [vim-beancount](https://github.com/nathangrigg/vim-beancount)
+- [python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot)
