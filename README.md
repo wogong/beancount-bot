@@ -26,10 +26,11 @@ The message format that the bot accepts is as follows:
 
 ## TODO
 
-- [ ] unit test
-- [ ] docker deployment
-- [ ] reload beancount file
 - [x] fuzzy match
+- [x] docker deployment
+- [x] support multiple legs
+- [ ] unit test
+- [ ] reload beancount file
 
 ## Credits
 - [beancount](https://github.com/beancount/beancount)

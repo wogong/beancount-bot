@@ -103,6 +103,24 @@ def getaccount(base, accounts):
         return r[0], 1
 
 
+def parse_message(msg):
+    data = msg.split()
+    n = 0
+    while data[2*n+1].replace('.','',1).isdigit():
+        n = n + 1
+    legs = []
+    sum_amounts = 0.0
+    for i in range(0, n+1, 2):
+        account = data[i]
+        amount = data[i+1]
+        sum_amounts = sum_amounts + float(amount)
+        leg = (account, amount)
+        legs.append(leg)
+    leg_to = (data[2*n], -sum_amounts)
+    legs.append(leg_to)
+    note = data[2*n+1:]
+    return legs, note
+
 async def bean(update: Update, context: CustomContext) -> None:
     chat_id = update.message.chat.id
     if (chat_id != int(CHAT_ID)):
@@ -110,25 +128,31 @@ async def bean(update: Update, context: CustomContext) -> None:
     message = update.message.text
     accounts = context.bot_data.accounts
     try:
-        _from, _amount, _to, *note = message.split()
-        note = ' '.join(note)
-        account_from, flag_from = getaccount(_from, accounts)
-        account_to, flag_to = getaccount(_to, accounts)
-        flag_mark = '!' if flag_from + flag_to > 0 else '*'
-        amount = -Decimal(float(_amount)).quantize(Decimal('0.00'))
-        date = datetime.now().strftime("%Y-%m-%d")
-
-        transactions = f"""{date} {flag_mark} "" "{note}"
-    {account_from} {amount} CNY
-    {account_to}
-"""
-        with open(BEANCOUNT_OUTPUT, 'a+') as f:
-            f.write(transactions)
-        print(transactions)
-        response = transactions
+        legs, note = parse_message(message)
     except Exception as e:
         print(str(e))
         response = 'error, {}'.format(str(e))
+        
+    note = ' '.join(note)
+    flags = 0
+    transactions = ''
+    for leg in legs:
+        _account, _amount = leg
+        amount = -Decimal(float(_amount)).quantize(Decimal('0.00'))
+        account, flag = getaccount(_account, accounts)
+        flags = flags + flag
+        transactions = transactions + '\n    ' + account + ' ' + str(amount) + ' CNY'
+
+    flag_mark = '!' if flags > 0 else '*'
+    date = datetime.now().strftime("%Y-%m-%d")
+
+    transactions = f"""{date} {flag_mark} "" "{note}"{transactions}
+"""
+    
+    with open(BEANCOUNT_OUTPUT, 'a+') as f:
+        f.write(transactions)
+    print(transactions)
+    response = transactions
     await update.message.reply_text(response)
 
 
