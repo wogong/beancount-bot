@@ -1,0 +1,10 @@
+version: "3"
+
+services:
+  beanbot:
+    build:
+      context: "."
+      dockerfile: Dockerfile
+    volumes:
+      - "./:/codebase"
+    restart: always
