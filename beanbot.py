@@ -106,7 +106,7 @@ def getaccount(base, accounts):
 def parse_message(msg):
     data = msg.split()
     n = 0
-    while data[2*n+1].replace('.','',1).isdigit():
+    while 2*n+1 < len(data) -1 and data[2*n+1].replace('.','',1).isdigit():
         n = n + 1
     legs = []
     sum_amounts = 0.0
