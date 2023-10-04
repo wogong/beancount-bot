@@ -102,21 +102,31 @@ def getaccount(base, accounts):
     else:
         return r[0], 1
 
-
+def parse_amount(string):
+    match = re.match(r'^([\d\.]+)([A-Za-z]*)$', string)
+    if match:
+        amount = match.group(1)
+        currency = match.group(2) if match.group(2) else CURRENCY
+        return amount, currency
+    else:
+        print('Invalid amount format')
+    
 def parse_message(msg):
     data = msg.split()
     n = 0
-    while 2*n+1 < len(data) -1 and data[2*n+1].replace('.','',1).isdigit():
+    pattern = re.compile("cny|usd|sgd|hkd|tl|rub", re.IGNORECASE)
+    while 2*n+1 < len(data) -1 and pattern.sub('',data[2*n+1]).isdigit():
         n = n + 1
     legs = []
     sum_amounts = 0.0
+    currency = CURRENCY
     for i in range(0, n+1, 2):
         account = data[i]
-        amount = data[i+1]
+        amount, currency = parse_amount(data[i+1])
         sum_amounts = sum_amounts + float(amount)
-        leg = (account, amount)
+        leg = (account, amount, currency)
         legs.append(leg)
-    leg_to = (data[2*n], -sum_amounts)
+    leg_to = (data[2*n], -sum_amounts, currency)
     legs.append(leg_to)
     note = data[2*n+1:]
     return legs, note
@@ -129,19 +139,19 @@ async def bean(update: Update, context: CustomContext) -> None:
     accounts = context.bot_data.accounts
     try:
         legs, note = parse_message(message)
+        note = ' '.join(note)
     except Exception as e:
         print(str(e))
         response = 'error, {}'.format(str(e))
         
-    note = ' '.join(note)
     flags = 0
     transactions = ''
     for leg in legs:
-        _account, _amount = leg
+        _account, _amount, currency = leg
         amount = -Decimal(float(_amount)).quantize(Decimal('0.00'))
         account, flag = getaccount(_account, accounts)
         flags = flags + flag
-        transactions = transactions + '\n    ' + account + ' ' + str(amount) + ' CNY'
+        transactions = transactions + '\n    ' + account + ' ' + str(amount) + ' ' + currency.upper()
 
     flag_mark = '!' if flags > 0 else '*'
     date = datetime.now().strftime("%Y-%m-%d")

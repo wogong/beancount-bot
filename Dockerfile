@@ -16,4 +16,5 @@ ADD . /codebase
 WORKDIR /codebase
 RUN pip3 install -r requirements.txt
 
-CMD python3 /codebase/beanbot.py;
+#CMD python3 /codebase/beanbot.py;
+ENTRYPOINT ["python3", "/codebase/beanbot.py"]

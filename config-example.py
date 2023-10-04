@@ -8,5 +8,7 @@ BOT="DDD:XXX"
 CHAT_ID="XXXXXXXX"
 # placeholder string when no account is found
 PLACEHOLDER="TODO"
+# default currency when no currency is specified
+CURRENCY="CNY"
 # proxy for telegram bot, format 'http://USERNAME:PASSWORD@PROXY_HOST:PROXY_PORT'
 #PROXY="http://127.0.0.1:7890"

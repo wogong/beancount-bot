@@ -6,5 +6,6 @@ services:
       context: "."
       dockerfile: Dockerfile
     volumes:
-      - "./:/codebase"
+      - /home/wogong/Dropbox/Server/data/bc:/data
+      - ./config.py.docker:/codebase/config.py
     restart: always
