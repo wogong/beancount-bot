@@ -91,7 +91,15 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text("Help!")
 
 
-def getaccount(base, accounts):
+def get_leg_num(data):
+    n = 0
+    pattern = re.compile(r"\.|cny|usd|sgd|hkd|tl|rub", re.IGNORECASE)
+    while 2*n+1 < len(data) -1 and pattern.sub('',data[2*n+1]).isdigit():
+        n = n + 1
+    return n
+
+
+def get_account(base, accounts):
     pattern = re.compile('^.*' + re.sub(':', '.*:.*', base) + '.*', re.IGNORECASE)
     r = list(filter(pattern.match, accounts))
     n = len(r)
@@ -102,34 +110,35 @@ def getaccount(base, accounts):
     else:
         return r[0], 1
 
-def parse_amount(string):
+
+def parse_amount_currency(string):
     match = re.match(r'^([\d\.]+)([A-Za-z]*)$', string)
     if match:
         amount = match.group(1)
         currency = match.group(2) if match.group(2) else CURRENCY
-        return amount, currency
+        return amount, currency.upper()
     else:
         print('Invalid amount format')
-    
+
+
 def parse_message(msg):
     data = msg.split()
-    n = 0
-    pattern = re.compile("cny|usd|sgd|hkd|tl|rub", re.IGNORECASE)
-    while 2*n+1 < len(data) -1 and pattern.sub('',data[2*n+1]).isdigit():
-        n = n + 1
+    leg_num = get_leg_num(data)
     legs = []
     sum_amounts = 0.0
     currency = CURRENCY
-    for i in range(0, n+1, 2):
+    for i in range(0, leg_num + 1, 2):
         account = data[i]
-        amount, currency = parse_amount(data[i+1])
+        amount, currency = parse_amount_currency(data[i+1])
         sum_amounts = sum_amounts + float(amount)
-        leg = (account, amount, currency)
+        leg = (account, -float(amount), currency)
         legs.append(leg)
-    leg_to = (data[2*n], -sum_amounts, currency)
+    leg_to = (data[2 * leg_num], sum_amounts, currency)
     legs.append(leg_to)
-    note = data[2*n+1:]
+    note_ = data[2 * leg_num + 1:]
+    note = ' '.join(note_)
     return legs, note
+
 
 async def bean(update: Update, context: CustomContext) -> None:
     chat_id = update.message.chat.id
@@ -139,7 +148,6 @@ async def bean(update: Update, context: CustomContext) -> None:
     accounts = context.bot_data.accounts
     try:
         legs, note = parse_message(message)
-        note = ' '.join(note)
     except Exception as e:
         print(str(e))
         response = 'error, {}'.format(str(e))
@@ -148,10 +156,10 @@ async def bean(update: Update, context: CustomContext) -> None:
     transactions = ''
     for leg in legs:
         _account, _amount, currency = leg
-        amount = -Decimal(float(_amount)).quantize(Decimal('0.00'))
-        account, flag = getaccount(_account, accounts)
+        amount = Decimal(float(_amount)).quantize(Decimal('0.00'))
+        account, flag = get_account(_account, accounts)
         flags = flags + flag
-        transactions = transactions + '\n    ' + account + ' ' + str(amount) + ' ' + currency.upper()
+        transactions = transactions + '\n    ' + account + ' ' + str(amount) + ' ' + currency
 
     flag_mark = '!' if flags > 0 else '*'
     date = datetime.now().strftime("%Y-%m-%d")
