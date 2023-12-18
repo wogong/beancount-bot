@@ -1,2 +1,3 @@
-config.py*
+src/config.py
+src/config-docker.py
 __pycache__

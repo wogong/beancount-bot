@@ -7,5 +7,5 @@ services:
       dockerfile: Dockerfile
     volumes:
       - /home/wogong/Dropbox/Server/data/bc:/data
-      - ./config.py.docker:/codebase/config.py
+      - ./src/config-docker.py:/codebase/config.py
     restart: always
