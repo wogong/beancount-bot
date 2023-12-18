@@ -12,7 +12,11 @@ install:  ## Install dependency
 
 run:  ## Running natively using python
 	$(info Running use python)
-	python3 beanbot.py
+	python3 src/beanbot.py
+
+test:  ## Running python test
+	$(info Running python test)
+	pytest -q src/test_beanbot.py
 
 docker: ## Runing using docker-compose
 	$(info Docker-compose...)
