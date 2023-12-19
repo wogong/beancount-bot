@@ -21,4 +21,3 @@ test:  ## Running python test
 docker: ## Runing using docker-compose
 	$(info Docker-compose...)
 	docker-compose up -d
-

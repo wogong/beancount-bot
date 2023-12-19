@@ -54,7 +54,7 @@ example:
 - [x] fuzzy match
 - [x] docker deployment
 - [x] support multiple legs
-- [ ] unit test
+- [x] unit test
 - [ ] reload beancount file
 
 ## Credits

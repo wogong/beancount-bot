@@ -1,20 +1,4 @@
-#!/usr/bin/env python
-# pylint: disable=unused-argument, wrong-import-position
-# This program is dedicated to the public domain under the CC0 license.
-
-"""
-Simple Bot to reply to Telegram messages.
-
-First, a few handler functions are defined. Then, those functions are passed to
-the Application and registered at their respective places.
-Then, the bot is started and runs until we press Ctrl-C on the command line.
-
-Usage:
-Basic Echobot example, repeats messages.
-Press Ctrl-C on the command line or send a signal to the process to stop the
-bot.
-"""
-
+import os
 import re
 import logging
 from datetime import datetime
@@ -23,7 +7,12 @@ from decimal import Decimal
 from beancount.loader import load_file
 from beancount.core import data
 
-from config import *
+from dotenv import load_dotenv
+load_dotenv()
+BEANCOUNT_ROOT = os.getenv("BEANCOUNT_ROOT")
+BEANCOUNT_OUTPUT = os.getenv("BEANCOUNT_OUTPUT")
+BOT = os.getenv("BOT")
+CURRENCY = os.getenv("CURRENCY")
 
 from telegram import ForceReply, Update
 from telegram.ext import Application, CommandHandler, CallbackContext, ContextTypes, ExtBot, MessageHandler, filters
@@ -166,10 +155,7 @@ def main() -> None:
 
     """Start the bot."""
     # Create the Application and pass it your bot's token.
-    if 'PROXY' in globals():
-        application = Application.builder().token(BOT).proxy_url(PROXY).get_updates_proxy_url(PROXY).build()
-    else:
-        application = Application.builder().token(BOT).context_types(context_types).build()
+    application = Application.builder().token(BOT).context_types(context_types).build()
 
     # on different commands - answer in Telegram
     application.add_handler(CommandHandler("start", start))
