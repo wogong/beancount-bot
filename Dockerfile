@@ -23,4 +23,4 @@ WORKDIR /codebase
 RUN pip3 install --no-cache-dir -r requirements.txt
 
 #CMD python3 /codebase/beanbot.py;
-ENTRYPOINT ["python3", "/codebase/src/beanbot.py"]
+ENTRYPOINT ["python3", "/codebase/src/bot.py"]

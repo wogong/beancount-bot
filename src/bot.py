@@ -7,16 +7,17 @@ from decimal import Decimal
 from beancount.loader import load_file
 from beancount.core import data
 
+from telegram import ForceReply, Update
+from telegram.ext import Application, CommandHandler, CallbackContext, ContextTypes, ExtBot, MessageHandler, filters
+
 from dotenv import load_dotenv
+
 load_dotenv()
 BEANCOUNT_ROOT = os.getenv("BEANCOUNT_ROOT")
 BEANCOUNT_OUTPUT = os.getenv("BEANCOUNT_OUTPUT")
 BOT = os.getenv("BOT")
 CURRENCY = os.getenv("CURRENCY")
 CHAT_ID = os.getenv("CHAT_ID")
-
-from telegram import ForceReply, Update
-from telegram.ext import Application, CommandHandler, CallbackContext, ContextTypes, ExtBot, MessageHandler, filters
 
 # Enable logging
 logging.basicConfig(

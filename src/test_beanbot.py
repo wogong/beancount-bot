@@ -1,6 +1,6 @@
 import pytest
 
-from beanbot import *
+from bot import *
 
 data_leg_num = [
    ("xxx 4.5 5587", 1),

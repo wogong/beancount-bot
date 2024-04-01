@@ -8,9 +8,9 @@ This is a Telegram bot that allows you to add transactions to your Beancount fil
 
 1. Create a new bot with @BotFather and obtain its token.
 2. Obtain your UserID with @userinfobot.
-3. Download this repo and copy the config-example.py file to config.py and update the config file with your own values.
+3. Download this repo and copy the .`env.example` file to `.env` and update the config file with your own values.
 4. Install the required packages with `python3 -m pip install -r requirements.txt`.
-5. Run the bot with `python3 beanbot.py`.
+5. Run the bot with `python3 bot.py`.
 
 ### Docker-Compose
 Step 1-3 are same as above, make sure you have docker and docker-compose installed.
