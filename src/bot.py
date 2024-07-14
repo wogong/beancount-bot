@@ -69,7 +69,21 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text("Help!")
 
 
-def get_leg_num(data):
+def get_leg_num(data)->int:
+    """
+    Returns the number of legs in the given data.
+
+    Args:
+        data (list): A list of data.
+
+    Returns:
+        int: The number of legs in the data.
+    
+    Examples:
+        '5600 13.12 ccc 小米编织数据线3A' -> 1
+        '5600 13.12 Jdou 6 ccc 小米编织数据线3A' -> 2
+        '5600 13.12 Jdou 6 ecard 5 ccc 小米编织数据线3A' -> 3
+    """
     n = 0
     pattern = re.compile(r"\.|cny|usd|sgd|hkd|tl|rub", re.IGNORECASE)
     while 2*n+1 < len(data) -1 and pattern.sub('',data[2*n+1]).isdigit():
@@ -78,6 +92,19 @@ def get_leg_num(data):
 
 
 def get_account(base, accounts):
+    """
+    Get the account matching the given base from the list of accounts.
+
+    Args:
+        base (str): The base account to match.
+        accounts (list): The list of accounts to search.
+
+    Returns:
+        tuple: A tuple containing the matched account and a flag indicating if multiple matches were found.
+               If no match is found, the tuple contains a placeholder string 'TODO' and a flag of 1.
+               If a single match is found, the tuple contains the matched account and a flag of 0.
+               If multiple matches are found, the tuple contains the first matched account and a flag of 1.
+    """
     pattern = re.compile('^.*' + re.sub(':', '.*:.*', base) + '.*', re.IGNORECASE)
     r = list(filter(pattern.match, accounts))
     n = len(r)
@@ -90,6 +117,19 @@ def get_account(base, accounts):
 
 
 def parse_amount_currency(string):
+    """
+    Parses a string to extract the amount and currency.
+
+    Args:
+        string (str): The string to be parsed.
+
+    Returns:
+        tuple: A tuple containing the amount and currency extracted from the string.
+
+    Raises:
+        None
+
+    """
     match = re.match(r'^([\d\.]+)([A-Za-z]*)$', string)
     if match:
         amount = match.group(1)
@@ -100,14 +140,34 @@ def parse_amount_currency(string):
 
 
 def parse_message(msg):
+    """
+    Parses a message and returns a list of legs and a note.
+
+    Args:
+        msg (str): The message to parse.
+
+    Returns:
+        tuple: A tuple containing a list of legs and a note.
+            The list of legs is a list of tuples, where each tuple contains
+            the account, amount, and currency for a leg.
+            The note is a string containing any additional notes.
+
+    Example:
+        >>> msg = "account1 10USD account2 -10USD"
+        >>> parse_message(msg)
+        ([
+            ('account1', -10.0, 'USD'),
+            ('account2', 10.0, 'USD')
+        ], '')
+    """
     data = msg.split()
     leg_num = get_leg_num(data)
     legs = []
     sum_amounts = 0.0
     currency = CURRENCY
-    for i in range(0, leg_num + 1, 2):
-        account = data[i]
-        amount, currency = parse_amount_currency(data[i+1])
+    for i in range(0, leg_num):
+        account = data[2*i]
+        amount, currency = parse_amount_currency(data[2*i+1])
         sum_amounts = sum_amounts + float(amount)
         leg = (account, -float(amount), currency)
         legs.append(leg)

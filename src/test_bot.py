@@ -25,6 +25,7 @@ data_notes = [
 data_legs = [
    ("xxxx 4.5 xxxx", [('xxxx', -4.5, CURRENCY), ('xxxx', 4.5, CURRENCY)]),
    ("2739 4.5 9423 2.3 yyyy", [('2739', -4.5, CURRENCY), ('9423', -2.3, CURRENCY), ('yyyy', 6.8, CURRENCY)]),
+   ("2739 4.5 9423 2.3 ecard 5 yyyy", [('2739', -4.5, CURRENCY), ('9423', -2.3, CURRENCY), ('ecard', -5.0, CURRENCY), ('yyyy', 11.8, CURRENCY)]),
 ]
 
 class Test_Beanbot():

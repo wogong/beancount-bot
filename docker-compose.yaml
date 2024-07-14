@@ -5,6 +5,10 @@ services:
     build:
       context: "."
       dockerfile: Dockerfile
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
     volumes:
       - /home/wogong/Dropbox/Server/data/bc:/data
       - ./src/.env.docker:/codebase/src/.env
