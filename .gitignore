@@ -1,3 +1,4 @@
 src/.env
 src/.env.docker
+.venv
 __pycache__
