@@ -3,6 +3,7 @@ import re
 import logging
 from datetime import datetime
 from decimal import Decimal
+from typing import Optional
 
 from beancount.loader import load_file
 from beancount.core import data

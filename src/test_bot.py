@@ -1,6 +1,6 @@
 import pytest
 
-from bot import *
+from bot import CURRENCY, parse_amount_currency, get_leg_num, parse_message
 
 data_leg_num = [
    ("xxx 4.5 5587", 1),
