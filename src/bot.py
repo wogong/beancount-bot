@@ -4,6 +4,8 @@ import logging
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
+import subprocess
+from functools import wraps
 
 from beancount.loader import load_file
 from beancount.core import data
@@ -14,11 +16,13 @@ from telegram.ext import Application, CommandHandler, CallbackContext, ContextTy
 from dotenv import load_dotenv
 
 load_dotenv()
+MAKEFILE = os.getenv("MAKEFILE")
 BEANCOUNT_ROOT = os.getenv("BEANCOUNT_ROOT")
 BEANCOUNT_OUTPUT = os.getenv("BEANCOUNT_OUTPUT")
 BOT = os.getenv("BOT")
 CURRENCY = os.getenv("CURRENCY")
 CHAT_ID = os.getenv("CHAT_ID")
+ALLOWED_USERS = [int(CHAT_ID)]
 
 # Enable logging
 logging.basicConfig(
@@ -54,6 +58,18 @@ class CustomContext(CallbackContext[ExtBot, dict, dict, AccountsData]):
         self._message_id: Optional[int] = None
 
 
+def restricted(func):
+    @wraps(func)
+    async def wrapped(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+        user_id = update.effective_user.id
+        if user_id not in ALLOWED_USERS:
+            print(f"Unauthorized access, User ID: {user_id}")
+            await update.message.reply_text('Sorry, you do not have permission to use this command.')
+            return
+        return await func(update, context, *args, **kwargs)
+    return wrapped
+
+
 # Define a few command handlers. These usually take the two arguments update and
 # context.
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -64,10 +80,51 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         reply_markup=ForceReply(selective=True),
     )
 
-
+@restricted
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a message when the command /help is issued."""
-    await update.message.reply_text("Help!")
+    help_text = (
+        "Available commands:\n"
+        "/start - Start the bot\n"
+        "/help - Show this help message\n"
+        "/bal <argument> - Check current account balance\n"
+        "/pay <argument> - Check account payment by month\n"
+    )
+    await update.message.reply_text(help_text)
+
+@restricted
+async def bal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Run the make command and send the output when the command /bal is issued."""
+    argument = ' '.join(context.args)
+    if argument == '':
+        await update.message.reply_text('account is required')
+    else:
+        env = {}
+        env['account'] = argument
+        try:
+            result = subprocess.run(["make", "-f", MAKEFILE, 'bal'], env=env, capture_output=True, text=True)
+            output = result.stdout
+        except subprocess.CalledProcessError as e:
+            output = f"An error occurred: {e.stderr}"
+        
+        await update.message.reply_text(output)
+
+@restricted
+async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Run the make command and send the output when the command /pay is issued."""
+    argument = ' '.join(context.args)
+    if argument == '':
+        await update.message.reply_text('account is required')
+    else:
+        env = {}
+        env['account'] = argument
+        try:
+            result = subprocess.run(["make", "-f", MAKEFILE, 'pay'], env=env, capture_output=True, text=True)
+            output = result.stdout
+        except subprocess.CalledProcessError as e:
+            output = f"An error occurred: {e.stderr}"
+        
+        await update.message.reply_text(output)
 
 
 def get_leg_num(data)->int:
@@ -81,9 +138,9 @@ def get_leg_num(data)->int:
         int: The number of legs in the data.
     
     Examples:
-        '5600 13.12 ccc 小米编织数据线3A' -> 1
-        '5600 13.12 Jdou 6 ccc 小米编织数据线3A' -> 2
-        '5600 13.12 Jdou 6 ecard 5 ccc 小米编织数据线3A' -> 3
+        '5600 13.12 ccc 小米编织数据线 3A' -> 1
+        '5600 13.12 Jdou 6 ccc 小米编织数据线 3A' -> 2
+        '5600 13.12 Jdou 6 ecard 5 ccc 小米编织数据线 3A' -> 3
     """
     n = 0
     pattern = re.compile(r"\.|cny|usd|sgd|hkd|tl|rub", re.IGNORECASE)
@@ -179,6 +236,7 @@ def parse_message(msg):
     return legs, note
 
 
+@restricted 
 async def bean(update: Update, context: CustomContext) -> None:
     chat_id = update.message.chat.id
     if (chat_id != int(CHAT_ID)):
@@ -224,6 +282,9 @@ def main() -> None:
     # on different commands - answer in Telegram
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
+
+    application.add_handler(CommandHandler("bal", bal))
+    application.add_handler(CommandHandler("pay", pay))
 
     # on non command i.e message - echo the message on Telegram
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, callback = bean))
