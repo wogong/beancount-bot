@@ -1,7 +1,7 @@
 .DEFAULT_GOAL:=help
 SHELL:=/bin/bash
 BEAN = beancount_path # beancount path, where you put all your ledger files and Makefile
-BEANCOUNT_FILE = beancount_file_path # beancount file path, you root file
+BEANCOUNT_FILE = beancount_file_path # beancount file path, your root file
 
 .PHONY: help bal pay check
 
