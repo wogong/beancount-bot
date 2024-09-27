@@ -104,9 +104,9 @@ async def bal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         try:
             result = subprocess.run(["make", "-f", MAKEFILE, 'bal'], env=env, capture_output=True, text=True)
             output = result.stdout
+            print(output)
         except subprocess.CalledProcessError as e:
             output = f"An error occurred: {e.stderr}"
-        
         await update.message.reply_text(output)
 
 @restricted
@@ -121,9 +121,9 @@ async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         try:
             result = subprocess.run(["make", "-f", MAKEFILE, 'pay'], env=env, capture_output=True, text=True)
             output = result.stdout
+            print(output)
         except subprocess.CalledProcessError as e:
             output = f"An error occurred: {e.stderr}"
-        
         await update.message.reply_text(output)
 
 
