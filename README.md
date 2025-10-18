@@ -16,7 +16,7 @@ This is a Telegram bot that allows you to add transactions to your Beancount fil
 ### Docker-Compose
 Step 1-4 are same as above, make sure you have docker and docker-compose installed.
 
-5. Just run `docker-compose up`
+5. Update volume paths in docker-compose.yml, then run `docker-compose up`
 
 ## Usage
 
