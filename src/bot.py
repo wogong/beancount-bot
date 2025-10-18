@@ -10,8 +10,8 @@ from functools import wraps
 from beancount.loader import load_file
 from beancount.core import data
 
-from telegram import ForceReply, Update
-from telegram.ext import Application, CommandHandler, CallbackContext, ContextTypes, ExtBot, MessageHandler, filters
+from telegram import ForceReply, Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, CallbackContext, ContextTypes, ExtBot, MessageHandler, filters
 
 from dotenv import load_dotenv
 
@@ -65,7 +65,11 @@ def restricted(func):
         user_id = update.effective_user.id
         if user_id not in ALLOWED_USERS:
             print(f"Unauthorized access, User ID: {user_id}")
-            await update.message.reply_text('Sorry, you do not have permission to use this command.')
+            effective_message = update.effective_message
+            if update.callback_query:
+                await update.callback_query.answer()
+            if effective_message:
+                await effective_message.reply_text('Sorry, you do not have permission to use this command.')
             return
         return await func(update, context, *args, **kwargs)
     return wrapped
@@ -265,11 +269,49 @@ async def bean(update: Update, context: CustomContext) -> None:
 
         transactions = f"""{date} {flag_mark} "" "{note}"{transactions}
 """
-        with open(BEANCOUNT_OUTPUT, 'a+') as f:
+        with open(BEANCOUNT_OUTPUT, 'a+', encoding='utf-8') as f:
             f.write(transactions)
         print(transactions)
         response = transactions
-        await update.message.reply_text(response)
+        keyboard = InlineKeyboardMarkup(
+            [[InlineKeyboardButton(text='Revert', callback_data='revert_transaction')]]
+        )
+        sent_message = await update.message.reply_text(response, reply_markup=keyboard)
+        pending_transactions = context.chat_data.setdefault('pending_transactions', {})
+        pending_transactions[sent_message.message_id] = transactions
+
+
+@restricted
+async def revert_transaction(update: Update, context: CustomContext) -> None:
+    query = update.callback_query
+    if query is None or query.message is None:
+        return
+
+    pending_transactions = context.chat_data.get('pending_transactions', {})
+    transaction = pending_transactions.get(query.message.message_id)
+
+    if transaction is None:
+        await query.answer(text='Nothing to revert.', show_alert=True)
+        await query.edit_message_reply_markup(reply_markup=None)
+        return
+
+    try:
+        with open(BEANCOUNT_OUTPUT, 'r+', encoding='utf-8') as ledger:
+            content = ledger.read()
+            if not content.endswith(transaction):
+                await query.answer(text='Cannot revert: ledger has changed.', show_alert=True)
+                return
+            ledger.seek(0)
+            ledger.truncate()
+            ledger.write(content[:-len(transaction)])
+    except FileNotFoundError:
+        await query.answer(text='Cannot revert: ledger file missing.', show_alert=True)
+        return
+
+    pending_transactions.pop(query.message.message_id, None)
+    await query.answer(text='Transaction reverted.')
+    updated_text = f"{query.message.text}\n\nReverted." if query.message.text else "Reverted."
+    await query.edit_message_text(updated_text)
 
 
 def main() -> None:
@@ -289,6 +331,7 @@ def main() -> None:
 
     application.add_handler(CommandHandler("bal", bal))
     application.add_handler(CommandHandler("pay", pay))
+    application.add_handler(CallbackQueryHandler(revert_transaction, pattern="^revert_transaction$"))
 
     # on non command i.e message - echo the message on Telegram
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, callback = bean))
