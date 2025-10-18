@@ -1,0 +1,12 @@
+[Unit]
+Description=Beancount telegram bot
+
+[Service]
+WorkingDirectory=/data0/tsl/Dropbox/Repos/beancount-bot
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/home/wogong/Dropbox/Server/docker/beancount-bot/src/.env
+ExecStart=/home/wogong/tgbot/bin/python /home/wogong/Dropbox/Server/docker/beancount-bot/src/bot.py
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
