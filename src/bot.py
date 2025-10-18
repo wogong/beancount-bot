@@ -23,6 +23,7 @@ BOT = os.getenv("BOT")
 CURRENCY = os.getenv("CURRENCY")
 CHAT_ID = os.getenv("CHAT_ID")
 ALLOWED_USERS = [int(CHAT_ID)]
+PROXY = os.getenv("PROXY")
 
 # Enable logging
 logging.basicConfig(
@@ -264,7 +265,6 @@ async def bean(update: Update, context: CustomContext) -> None:
 
         transactions = f"""{date} {flag_mark} "" "{note}"{transactions}
 """
-        
         with open(BEANCOUNT_OUTPUT, 'a+') as f:
             f.write(transactions)
         print(transactions)
@@ -277,7 +277,11 @@ def main() -> None:
 
     """Start the bot."""
     # Create the Application and pass it your bot's token.
-    application = Application.builder().token(BOT).context_types(context_types).build()
+    if len(PROXY) > 5:
+        logging.info(f'use proxy {PROXY}')
+        application = Application.builder().token(BOT).proxy(PROXY).get_updates_proxy(PROXY).context_types(context_types).build()
+    else:
+        application = Application.builder().token(BOT).context_types(context_types).build()
 
     # on different commands - answer in Telegram
     application.add_handler(CommandHandler("start", start))
