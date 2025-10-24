@@ -3,12 +3,13 @@ import re
 import logging
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Dict, Optional
 import subprocess
 from functools import wraps
 
 from beancount.loader import load_file
 from beancount.core import data
+from beancount.core.inventory import Inventory
 
 from telegram import ForceReply, Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, CallbackContext, ContextTypes, ExtBot, MessageHandler, filters
@@ -39,15 +40,17 @@ class AccountsData:
     """Custom class for chat_data. Here we store data per message."""
 
     def __init__(self) -> None:
-        entries, _, options = load_file(BEANCOUNT_ROOT)
+        entries, _, _ = load_file(BEANCOUNT_ROOT)
         self.accounts = set()
 
         for entry in entries:
             if isinstance(entry, data.Open):
                 self.accounts.add(entry.account)
             if isinstance(entry, data.Close):
-                self.accounts.remove(entry.account)
-        logger.info('Finished initiating accounts set.')
+                self.accounts.discard(entry.account)
+
+        self.balances = build_account_balances(entries)
+        logger.info('Finished initiating accounts set and balances.')
 
 
 class CustomContext(CallbackContext[ExtBot, dict, dict, AccountsData]):
@@ -98,21 +101,24 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text(help_text)
 
 @restricted
-async def bal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Run the make command and send the output when the command /bal is issued."""
-    argument = ' '.join(context.args)
+async def bal(update: Update, context: CustomContext) -> None:
+    """Return the balance for the account matching the provided argument."""
+    argument = ' '.join(context.args).strip()
     if argument == '':
         await update.message.reply_text('account is required')
-    else:
-        env = {}
-        env['account'] = argument
-        try:
-            result = subprocess.run(["make", "-f", MAKEFILE, 'bal'], env=env, capture_output=True, text=True)
-            output = result.stdout
-            print(output)
-        except subprocess.CalledProcessError as e:
-            output = f"An error occurred: {e.stderr}"
-        await update.message.reply_text(output)
+        return
+
+    accounts_data = context.bot_data
+    account, ambiguous = get_account(argument, accounts_data.accounts)
+
+    if account == 'TODO':
+        await update.message.reply_text(f'No account matched "{argument}".')
+        return
+
+    balance = accounts_data.balances.get(account)
+    balance_text = format_inventory(balance)
+    prefix = 'Multiple matches found, showing first.\n' if ambiguous else ''
+    await update.message.reply_text(f"{prefix}{account}: {balance_text}")
 
 @restricted
 async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -177,6 +183,39 @@ def get_account(base, accounts):
         return r[0], 0
     else:
         return r[0], 1
+
+
+def build_account_balances(entries) -> Dict[str, Inventory]:
+    """Aggregate balances for every account present in the ledger entries."""
+    balances: Dict[str, Inventory] = {}
+
+    for entry in entries:
+        if isinstance(entry, data.Transaction):
+            for posting in entry.postings:
+                if posting.units is None:
+                    continue
+                balances.setdefault(posting.account, Inventory()).add_amount(posting.units)
+
+    return balances
+
+
+def format_inventory(inventory: Optional[Inventory]) -> str:
+    """Render a Beancount inventory as a human readable string."""
+    if inventory is None or inventory.is_empty():
+        return '0'
+
+    positions = sorted(
+        (position for position in inventory if position.units),
+        key=lambda position: position.units.currency,
+    )
+
+    formatted_amounts = []
+    for position in positions:
+        amount = position.units
+        number = format(amount.number.normalize(), 'f')
+        formatted_amounts.append(f"{number} {amount.currency}")
+
+    return ', '.join(formatted_amounts)
 
 
 def parse_amount_currency(string):
