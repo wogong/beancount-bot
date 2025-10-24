@@ -42,7 +42,7 @@ logs: ## Show recent journal entries for the service
 tail: ## Follow the journal for the service
 	@journalctl --user-unit $(SERVICE_NAME).service -f
 
-env: ## Create a fresh uv environment under ~/uv/$(PROJECT_NAME) and activate it
+env: ## Create a fresh uv environment under ~/uv/$(PROJECT_NAME) (installs deps and activates shell)
 	@set -euo pipefail; \
 	ENV_DIR="$(UV_ENV_DIR)"; \
 	if [ -d "$$ENV_DIR" ]; then \
@@ -51,6 +51,16 @@ env: ## Create a fresh uv environment under ~/uv/$(PROJECT_NAME) and activate it
 	fi; \
 	mkdir -p "$(UV_HOME)"; \
 	uv venv "$$ENV_DIR"; \
+	if [ -f uv.lock ]; then \
+		echo "Syncing dependencies via uv.lock"; \
+		UV_PROJECT_ENVIRONMENT="$$ENV_DIR" uv sync --frozen || UV_PROJECT_ENVIRONMENT="$$ENV_DIR" uv sync; \
+	elif [ -f requirements.txt ]; then \
+		echo "Installing dependencies from requirements.txt"; \
+			uv pip sync --python "$$ENV_DIR/bin/python" requirements.txt || \
+			uv pip install --python "$$ENV_DIR/bin/python" --requirements requirements.txt; \
+	else \
+		echo "No dependency manifest found; skipping package installation."; \
+	fi; \
 	echo "Activating environment at $$ENV_DIR"; \
 	. "$$ENV_DIR/bin/activate"; \
 	exec $(SHELL) -i
