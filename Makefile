@@ -1,12 +1,16 @@
 .DEFAULT_GOAL:=help
 SHELL:=/bin/bash
 
+PROJECT_NAME ?= $(notdir $(CURDIR))
+UV_HOME ?= $(HOME)/uv
+UV_ENV_DIR ?= $(UV_HOME)/$(PROJECT_NAME)
+
 SERVICE_NAME ?= beancountbot
 SERVICE_FILE := $(SERVICE_NAME).service
 SYSTEMD_USER_DIR ?= $(HOME)/.config/systemd/user
 INSTALLED_SERVICE := $(SYSTEMD_USER_DIR)/$(SERVICE_FILE)
 PYTHON ?= /usr/bin/env python3
-.PHONY: help install run docker
+.PHONY: help install run docker env
 
 help:  ## Display this help
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m\033[0m\n\nTargets:\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -37,6 +41,19 @@ logs: ## Show recent journal entries for the service
 
 tail: ## Follow the journal for the service
 	@journalctl --user-unit $(SERVICE_NAME).service -f
+
+env: ## Create a fresh uv environment under ~/uv/$(PROJECT_NAME) and activate it
+	@set -euo pipefail; \
+	ENV_DIR="$(UV_ENV_DIR)"; \
+	if [ -d "$$ENV_DIR" ]; then \
+		echo "Environment already exists at $$ENV_DIR, skipping."; \
+		exit 0; \
+	fi; \
+	mkdir -p "$(UV_HOME)"; \
+	uv venv "$$ENV_DIR"; \
+	echo "Activating environment at $$ENV_DIR"; \
+	. "$$ENV_DIR/bin/activate"; \
+	exec $(SHELL) -i
 
 run:  ## Running natively using python
 	$(info Running use python)
