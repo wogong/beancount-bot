@@ -55,7 +55,13 @@ example:
 
 - You can use `/bal 1234` to query the balance of account~'1234'.
 - You can use `/pay 2345` to query the monthly payment of account~'2345' in curent year.
+- `/reload` tells the bot to re-run `load_file` (see `src/bot.py`, line 117) so that balances, BQL queries, and account lists reflect any ledger edits you made outside the bot. The response will echo any loader errors, split across multiple Telegram messages if needed to avoid API limits.
 - Add any other commands you like, remember to add corresponding commands in your Makefile and `src/bot.py`.
+
+### Ledger reload & validation feedback
+
+- When the bot starts, `AccountsData` immediately runs `load_file` and logs each loader error (with filename:line information) to the console, making it easier to diagnose ledger issues before chatting with the bot.
+- Running `/reload` later shows the same loader output in-chat, prefixed with `load_file (line 117)` so you know exactly which call produced the diagnostics.
 
 ## TODO
 
@@ -64,7 +70,7 @@ example:
 - [x] support multiple legs
 - [x] unit test
 - [x] add commands to run `bean-query`
-- [ ] reload beancount file
+- [x] reload beancount file
 
 ## Credits
 - [beancount](https://github.com/beancount/beancount)

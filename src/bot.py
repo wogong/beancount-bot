@@ -31,6 +31,7 @@ PROXY = os.getenv("PROXY")
 DEFAULT_CONFIG_PATH = SCRIPT_DIR / "config.yaml"
 CONFIG_PATH = Path(os.getenv("BOT_CONFIG", DEFAULT_CONFIG_PATH)).expanduser()
 BQL_ARGUMENT_TOKEN = "[args]"
+TELEGRAM_MESSAGE_LIMIT = 4096
 
 # Enable logging
 logging.basicConfig(
@@ -110,23 +111,83 @@ def load_bql_query_definitions() -> Dict[str, BQLQueryDefinition]:
 
 BQL_QUERY_DEFINITIONS = load_bql_query_definitions()
 
+
+def format_loader_error(error) -> str:
+    """Return a concise description of a beancount loader error."""
+    message = getattr(error, 'message', str(error))
+    source = getattr(error, 'source', None)
+    filename = None
+    lineno = None
+
+    if isinstance(source, dict):
+        filename = source.get('filename') or ''
+        lineno = source.get('lineno')
+
+    location = ''
+    if filename:
+        location = str(filename)
+        if lineno:
+            location = f'{location}:{lineno}'
+    elif lineno:
+        location = f'line {lineno}'
+
+    if location:
+        return f'{location} - {message}'
+    return message
+
+
+def format_loader_errors(errors: Sequence) -> str:
+    return '\n'.join(format_loader_error(error) for error in errors)
+
+
+async def reply_with_chunks(message, text: str, chunk_size: int = TELEGRAM_MESSAGE_LIMIT - 200) -> None:
+    """Reply to a Telegram message, splitting content to avoid length limits."""
+    if not text or not message:
+        return
+
+    chunk_size = max(1, chunk_size)
+    for start in range(0, len(text), chunk_size):
+        await message.reply_text(text[start:start + chunk_size])
+
+
 class AccountsData:
     """Custom class for chat_data. Here we store data per message."""
 
     def __init__(self) -> None:
-        entries, errors, options = load_file(BEANCOUNT_ROOT)
         self.accounts = set()
+        self.balances: Dict[str, Inventory] = {}
+        self.bql_queries = dict(BQL_QUERY_DEFINITIONS)
+        self.bql_connection: Optional[Connection] = None
+        self.last_errors: Sequence = []
+        self.reload()
+
+    def reload(self):
+        entries, errors, options = load_file(BEANCOUNT_ROOT)
+        accounts = set()
 
         for entry in entries:
             if isinstance(entry, data.Open):
-                self.accounts.add(entry.account)
+                accounts.add(entry.account)
             if isinstance(entry, data.Close):
-                self.accounts.discard(entry.account)
+                accounts.discard(entry.account)
 
+        self.accounts = accounts
         self.balances = build_account_balances(entries)
-        self.bql_queries = dict(BQL_QUERY_DEFINITIONS)
         self.bql_connection = build_bql_connection(entries, errors, options)
+        self.last_errors = errors or []
+        self._log_loader_errors(self.last_errors)
         logger.info('Finished initiating accounts set, balances, and BQL context.')
+        return self.last_errors
+
+    @staticmethod
+    def _log_loader_errors(errors: Sequence) -> None:
+        if not errors:
+            logger.info('Ledger loaded without errors.')
+            return
+
+        logger.error('Ledger loaded with %d error(s).', len(errors))
+        for error in errors:
+            logger.error('Ledger error: %s', format_loader_error(error))
 
     def run_bql_query(self, alias: str, arguments: str):
         if not self.bql_connection:
@@ -187,6 +248,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "/start - Start the bot",
         "/help - Show this help message",
         "/bal <account> - Check current account balance",
+        "/reload - Reload the ledger file",
     ]
 
     bot_data = getattr(context, 'bot_data', None)
@@ -231,6 +293,33 @@ async def bql(update: Update, context: CustomContext) -> None:
     alias = context.args[0].lower()
     arguments = ' '.join(context.args[1:]).strip()
     await _send_bql_response(update, context, alias, arguments)
+
+
+@restricted
+async def reload_ledger(update: Update, context: CustomContext) -> None:
+    """Reload the ledger file so balances reflect the latest entries."""
+    message = update.effective_message
+    if not message:
+        return
+
+    accounts_data = context.bot_data
+    try:
+        errors = accounts_data.reload()
+    except Exception as exc:
+        logger.exception('Failed to reload ledger.')
+        await message.reply_text(f'Ledger reload failed: {exc}')
+        return
+
+    response_lines = ['Ledger reloaded via load_file (line 117).']
+    if errors:
+        error_block = format_loader_errors(errors)
+        response_lines.append(f'{len(errors)} error(s) reported:')
+        if error_block:
+            response_lines.append(error_block)
+    else:
+        response_lines.append('No loader errors were reported.')
+
+    await reply_with_chunks(message, '\n'.join(response_lines))
 
 
 def build_bql_alias_handler(alias: str):
@@ -568,6 +657,7 @@ def main() -> None:
     application.add_handler(CommandHandler("help", help_command))
 
     application.add_handler(CommandHandler("bal", bal))
+    application.add_handler(CommandHandler("reload", reload_ledger))
     application.add_handler(CommandHandler("bql", bql))
     for alias in BQL_QUERY_DEFINITIONS:
         application.add_handler(CommandHandler(alias, build_bql_alias_handler(alias)))
