@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Dict, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence
 from functools import wraps
 
 from beancount.loader import load_file
@@ -18,6 +18,13 @@ from telegram.ext import Application, CallbackQueryHandler, CommandHandler, Call
 
 from dotenv import load_dotenv
 import yaml
+
+from auto_balance import (
+    AutoBalanceManager,
+    AutoBalanceConfig,
+    load_auto_balance_config,
+    default_fetcher_registry,
+)
 
 load_dotenv()
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -42,6 +49,19 @@ logging.basicConfig(
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
+
+
+def load_bot_config() -> Dict[str, Any]:
+    if not CONFIG_PATH.exists():
+        logger.info("No config file at %s; using defaults only.", CONFIG_PATH)
+        return {}
+
+    try:
+        with CONFIG_PATH.open("r", encoding="utf-8") as config_file:
+            return yaml.safe_load(config_file) or {}
+    except Exception as error:
+        logger.error("Failed to read %s: %s", CONFIG_PATH, error)
+        return {}
 
 
 @dataclass(frozen=True)
@@ -82,18 +102,10 @@ def _coerce_query_definition(alias: str, raw_value) -> Optional[BQLQueryDefiniti
     return BQLQueryDefinition(name=alias, sql=str(sql), description=description)
 
 
-def load_bql_query_definitions() -> Dict[str, BQLQueryDefinition]:
+def load_bql_query_definitions(config_data: Optional[Dict[str, Any]] = None) -> Dict[str, BQLQueryDefinition]:
     definitions = dict(DEFAULT_BQL_QUERIES)
 
-    if not CONFIG_PATH.exists():
-        logger.info("No config file at %s; using default query definitions only.", CONFIG_PATH)
-        return definitions
-
-    try:
-        with CONFIG_PATH.open("r", encoding="utf-8") as config_file:
-            config_data = yaml.safe_load(config_file) or {}
-    except Exception as error:
-        logger.error("Failed to read %s: %s", CONFIG_PATH, error)
+    if not config_data:
         return definitions
 
     queries = config_data.get("queries") or {}
@@ -109,8 +121,24 @@ def load_bql_query_definitions() -> Dict[str, BQLQueryDefinition]:
 
     return definitions
 
+BOT_CONFIG = load_bot_config()
+BQL_QUERY_DEFINITIONS = load_bql_query_definitions(BOT_CONFIG)
 
-BQL_QUERY_DEFINITIONS = load_bql_query_definitions()
+AUTO_BALANCE_CONFIG = load_auto_balance_config(BOT_CONFIG, CURRENCY or 'CNY')
+AUTO_BALANCE_LEDGER = (
+    os.getenv('AUTO_BALANCE_LEDGER')
+    or (AUTO_BALANCE_CONFIG.ledger if AUTO_BALANCE_CONFIG.ledger else None)
+    or BEANCOUNT_OUTPUT
+    or BEANCOUNT_ROOT
+)
+AUTO_BALANCE_LEDGER_PATH = Path(AUTO_BALANCE_LEDGER).expanduser() if AUTO_BALANCE_LEDGER else None
+AUTO_BALANCE_MANAGER: Optional[AutoBalanceManager] = None
+if AUTO_BALANCE_LEDGER_PATH and AUTO_BALANCE_CONFIG.has_entries():
+    AUTO_BALANCE_MANAGER = AutoBalanceManager(
+        config=AUTO_BALANCE_CONFIG,
+        ledger_path=AUTO_BALANCE_LEDGER_PATH,
+        fetcher_registry=default_fetcher_registry(),
+    )
 
 
 def format_loader_error(error) -> str:
@@ -646,6 +674,29 @@ async def revert_transaction(update: Update, context: CustomContext) -> None:
     await query.edit_message_text(updated_text)
 
 
+async def auto_balance_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not AUTO_BALANCE_MANAGER:
+        return
+
+    additions, errors = await AUTO_BALANCE_MANAGER.process_due_entries()
+
+    for account, exc in errors:
+        logger.error('Auto-balance error for %s: %s', account.account, exc)
+
+    if not additions:
+        return
+
+    lines = ['Auto-balance entries added:']
+    for result in additions:
+        amount_text = result.account.format_amount(result.amount)
+        lines.append(f"- {result.account.account}: {amount_text} {result.account.currency}")
+
+    try:
+        await context.bot.send_message(chat_id=int(CHAT_ID), text='\n'.join(lines))
+    except Exception as exc:  # pragma: no cover - network failure
+        logger.error('Failed to send auto-balance notification: %s', exc)
+
+
 def main() -> None:
     context_types = ContextTypes(context=CustomContext, bot_data=AccountsData)
 
@@ -673,6 +724,12 @@ def main() -> None:
 
     # Run the bot until the user presses Ctrl-C
     logger.info('Starting bot.')
+
+    if AUTO_BALANCE_MANAGER and AUTO_BALANCE_MANAGER.config.has_entries() and application.job_queue:
+        interval = max(60, AUTO_BALANCE_MANAGER.config.interval_seconds)
+        application.job_queue.run_once(auto_balance_job, when=0, name="auto_balance_startup")
+        application.job_queue.run_repeating(auto_balance_job, interval=interval, first=interval, name="auto_balance")
+
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 

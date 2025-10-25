@@ -1,0 +1,44 @@
+queries:
+  pay:
+    description: |
+      Monthly outgoing totals for matching accounts in 2025.
+    query: |
+      select account, month(date) as month, sum(position)
+      from year=2025
+      where account ~ [args] and number < 0
+      group by account, month
+      order by month desc
+
+auto_balance:
+  ledger: /path/to/auto_balance_output.beancount  # optional override; defaults to BEANCOUNT_OUTPUT
+  interval_seconds: 86400
+  entries:
+    - date: 1
+      description: Monthly credit cards (bill day 1)
+      accounts:
+        - account: Liabilities:CreditCard:Example
+          currency: CNY
+          balance: "-0.00"
+    - date: 15
+      accounts:
+        - account: Assets:Crypto:Wallet
+          currency: BTC
+          api_function: crypto_balance.fetch_wallet_balance
+          args:
+            address: "0xabc..."
+            precision: 8
+        - account: Assets:Crypto:BNBWallet
+          currency: BNB
+          api_function: crypto_balance.fetch_bnb_balance_on_bsc
+          args:
+            address: "0xabc..."
+        - account: Assets:Crypto:BNBWallet:USDT
+          currency: USDT
+          api_function: crypto_balance.fetch_usdt_balance_on_bsc
+          args:
+            address: "0xabc..."
+        - account: Assets:Crypto:BNBWallet:USDC
+          currency: USDC
+          api_function: crypto_balance.fetch_usdc_balance_on_bsc
+          args:
+            address: "0xabc..."
