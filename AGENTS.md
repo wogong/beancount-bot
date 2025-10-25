@@ -7,7 +7,7 @@ Core bot logic lives in `src/bot.py`, built around python-telegram-bot and Beanc
 Use `uv run src/bot.py` for a fast local launch with the pinned Python toolchain; `make run` wraps the same entry point with standard Python. Install dependencies via `uv sync` or `pip install -r requirements.txt` if you prefer pip. Run unit tests with `make test` (calls `pytest -q src/test_bot.py`). `make docker` delegates to `docker-compose up -d` for container runs; adjust `docker-compose.yaml` volume paths beforehand.
 
 ## Coding Style & Naming Conventions
-Target Python 3.12, four-space indents, and descriptive `snake_case` for functions and variables. Favor module-level constants for environment keys, mirroring `bot.py`. Static typing is encouraged where possible. Run `ruff check src` locally; commits such as `92e4305` show the expectation that lint passes.
+Target Python 3.14, four-space indents, and descriptive `snake_case` for functions and variables. Favor module-level constants for environment keys, mirroring `bot.py`. Static typing is encouraged where possible. Run `ruff check src` locally; commits such as `92e4305` show the expectation that lint passes.
 
 ## Testing Guidelines
 Prefer pytest-style tests in `src/test_*`. Name tests after the behavior asserted (e.g., `test_parse_multi_leg`). Mock Telegram or subprocess interactions to keep tests deterministic. When adding features, extend coverage for both successful and failure paths; current automation depends on contributors running `make test`.
