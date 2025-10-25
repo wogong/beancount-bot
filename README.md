@@ -9,8 +9,7 @@ This is a Telegram bot that allows you to add transactions to your Beancount fil
 1. Create a new bot with @BotFather and obtain its token.
 2. Obtain your UserID with @userinfobot.
 3. Download this repo and copy the `src/env.example` file to `src/.env` and update the config file with your own values.
-4. Copy the example Makefile from `beancount_root/Makefile`, maybe you need to update `bean-query` path.
-5. Install the required packages with `python3 -m pip install -r requirements.txt`, then run the bot with `python3 src/bot.py`.
+4. Install the required packages with `python3 -m pip install -r requirements.txt`, then run the bot with `python3 src/bot.py`.
 5. Or, if you use `uv`, just run `uv run src/bot.py`.
 
 ### Docker-Compose
@@ -62,6 +61,53 @@ example:
 
 - When the bot starts, `AccountsData` immediately runs `load_file` and logs each loader error (with filename:line information) to the console, making it easier to diagnose ledger issues before chatting with the bot.
 - Running `/reload` later shows the same loader output in-chat, prefixed with `load_file (line 117)` so you know exactly which call produced the diagnostics.
+
+### Auto balance assertions
+
+- Configure day-of-month balance assertions inside `src/config.yaml` under the `auto_balance` section. Each entry specifies the date(s) and the accounts that should receive `balance` directives. Example:
+
+```yaml
+auto_balance:
+  ledger: /path/to/ledger.beancount   # optional, defaults to BEANCOUNT_OUTPUT then BEANCOUNT_ROOT
+  interval_seconds: 3600              # optional, how often to check schedules
+  entries:
+    - date: 1
+      description: "Credit cards bill day"
+      accounts:
+        - account: Liabilities:CreditCard:ICBC:CUP-5600
+          currency: CNY
+          balance: "-0.00"
+        - account: Assets:Virtual:WeChat
+          currency: CNY
+    - date: 15
+      accounts:
+        - account: Assets:Crypto:Wallet
+          currency: BTC
+          api_function: crypto_balance.fetch_wallet_balance  # dotted import or built-in fetcher name
+          args:
+            address: "0xabc..."
+            precision: 8
+        - account: Assets:Crypto:BNBWallet
+          currency: BNB
+          api_function: crypto_balance.fetch_bnb_balance_on_bsc
+          args:
+            address: "0xabc..."
+        - account: Assets:Crypto:BNBWallet:USDT
+          currency: USDT
+          api_function: crypto_balance.fetch_usdt_balance_on_bsc
+          args:
+            address: "0xabc..."
+        - account: Assets:Crypto:BNBWallet:USDC
+          currency: USDC
+          api_function: crypto_balance.fetch_usdc_balance_on_bsc
+          args:
+            address: "0xabc..."
+```
+
+- The bot runs the auto-balance job once at startup and then every configured interval (default daily). When the current date matches an entry, it appends the balance assertion to the configured ledger file and notifies the owner in Telegram. Duplicate lines for the same date/account are skipped if they already exist in the ledger.
+- For accounts that can fetch balances from an API (e.g., crypto wallets), specify `api_function` plus an `args` mapping. Functions can be either built-in (see `auto_balance.py`) or any dotted import path that returns the numeric balance; the bot awaits coroutine results as well. Omit `api_function` to fall back to the static `balance` value (default `0`).
+- The auto-balance scheduler uses python-telegram-bot’s JobQueue subsystem. Make sure the dependency is installed with the `job-queue` extra (`pip install "python-telegram-bot[job-queue]"` or run `uv sync` with the provided requirements).
+- `src/crypto_balance.py` contains example fetchers (`fetch_wallet_balance`, `fetch_bnb_balance_on_bsc`, `fetch_usdt_balance_on_bsc`, `fetch_usdc_balance_on_bsc`) that you can copy and extend to integrate with your real APIs. Network endpoints are read from `.env` (e.g., set `BSC_ENDPOINT=https://bsc-mainnet.infura.io/v3/<project_id>`).
 
 ## TODO
 
