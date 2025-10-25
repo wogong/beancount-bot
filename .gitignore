@@ -1,5 +1,6 @@
 src/.env
 src/.env.docker
+src/config.yaml
 .venv
 .vscode
 __pycache__
