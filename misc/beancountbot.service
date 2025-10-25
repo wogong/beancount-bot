@@ -1,0 +1,12 @@
+[Unit]
+Description=Beancount Telegram Bot Service
+
+[Service]
+WorkingDirectory=<path>/beancount-bot
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=<path>/beancount-bot/src/.env
+ExecStart=python <path>/beancount-bot/src/bot.py
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
