@@ -1,7 +1,8 @@
 beancount
 beanquery
-python-telegram-bot
+python-telegram-bot[job-queue]
 python-dotenv
 pytest
 pyyaml
 pluggy
+web3
