@@ -1,23 +1,26 @@
 import os
 import re
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Dict, Optional
-import subprocess
+from pathlib import Path
+from typing import Dict, Optional, Sequence
 from functools import wraps
 
 from beancount.loader import load_file
 from beancount.core import data
 from beancount.core.inventory import Inventory
+from beanquery import Connection
 
 from telegram import ForceReply, Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, CallbackContext, ContextTypes, ExtBot, MessageHandler, filters
 
 from dotenv import load_dotenv
+import yaml
 
 load_dotenv()
-MAKEFILE = os.getenv("MAKEFILE")
+SCRIPT_DIR = Path(__file__).resolve().parent
 BEANCOUNT_ROOT = os.getenv("BEANCOUNT_ROOT")
 BEANCOUNT_OUTPUT = os.getenv("BEANCOUNT_OUTPUT")
 BOT = os.getenv("BOT")
@@ -25,6 +28,9 @@ CURRENCY = os.getenv("CURRENCY")
 CHAT_ID = os.getenv("CHAT_ID")
 ALLOWED_USERS = [int(CHAT_ID)]
 PROXY = os.getenv("PROXY")
+DEFAULT_CONFIG_PATH = SCRIPT_DIR / "config.yaml"
+CONFIG_PATH = Path(os.getenv("BOT_CONFIG", DEFAULT_CONFIG_PATH)).expanduser()
+BQL_ARGUMENT_TOKEN = "[args]"
 
 # Enable logging
 logging.basicConfig(
@@ -36,11 +42,79 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class BQLQueryDefinition:
+    name: str
+    sql: str
+    description: Optional[str] = None
+
+
+DEFAULT_BQL_QUERIES: Dict[str, BQLQueryDefinition] = {
+    "pay": BQLQueryDefinition(
+        name="pay",
+        sql=(
+            "select account, month(date) as month, sum(position) "
+            "from year=2025 where account ~ [args] and number<0 "
+            "group by account, month order by month desc"
+        ),
+        description="Monthly outgoing totals for matching accounts (2025).",
+    ),
+}
+
+
+def _coerce_query_definition(alias: str, raw_value) -> Optional[BQLQueryDefinition]:
+    if isinstance(raw_value, str):
+        sql = raw_value
+        description = None
+    elif isinstance(raw_value, dict):
+        sql = raw_value.get("query") or raw_value.get("sql")
+        description = raw_value.get("description")
+    else:
+        logger.warning("Ignoring query alias %s: unsupported config value", alias)
+        return None
+
+    if not sql:
+        logger.warning("Ignoring query alias %s: missing SQL text", alias)
+        return None
+
+    return BQLQueryDefinition(name=alias, sql=str(sql), description=description)
+
+
+def load_bql_query_definitions() -> Dict[str, BQLQueryDefinition]:
+    definitions = dict(DEFAULT_BQL_QUERIES)
+
+    if not CONFIG_PATH.exists():
+        logger.info("No config file at %s; using default query definitions only.", CONFIG_PATH)
+        return definitions
+
+    try:
+        with CONFIG_PATH.open("r", encoding="utf-8") as config_file:
+            config_data = yaml.safe_load(config_file) or {}
+    except Exception as error:
+        logger.error("Failed to read %s: %s", CONFIG_PATH, error)
+        return definitions
+
+    queries = config_data.get("queries") or {}
+    if not isinstance(queries, dict):
+        logger.warning("Config file %s has invalid 'queries' section; expected mapping.", CONFIG_PATH)
+        return definitions
+
+    for alias, raw_value in queries.items():
+        normalized_alias = alias.lower()
+        definition = _coerce_query_definition(normalized_alias, raw_value)
+        if definition:
+            definitions[normalized_alias] = definition
+
+    return definitions
+
+
+BQL_QUERY_DEFINITIONS = load_bql_query_definitions()
+
 class AccountsData:
     """Custom class for chat_data. Here we store data per message."""
 
     def __init__(self) -> None:
-        entries, _, _ = load_file(BEANCOUNT_ROOT)
+        entries, errors, options = load_file(BEANCOUNT_ROOT)
         self.accounts = set()
 
         for entry in entries:
@@ -50,7 +124,24 @@ class AccountsData:
                 self.accounts.discard(entry.account)
 
         self.balances = build_account_balances(entries)
-        logger.info('Finished initiating accounts set and balances.')
+        self.bql_queries = dict(BQL_QUERY_DEFINITIONS)
+        self.bql_connection = build_bql_connection(entries, errors, options)
+        logger.info('Finished initiating accounts set, balances, and BQL context.')
+
+    def run_bql_query(self, alias: str, arguments: str):
+        if not self.bql_connection:
+            raise RuntimeError('BQL connection is not available.')
+
+        definition = self.bql_queries.get(alias)
+        if not definition:
+            raise KeyError(alias)
+
+        query_text = render_bql_query(definition, arguments)
+        cursor = self.bql_connection.cursor()
+        cursor.execute(query_text)
+        description = cursor.description or []
+        rows = cursor.fetchall()
+        return description, rows
 
 
 class CustomContext(CallbackContext[ExtBot, dict, dict, AccountsData]):
@@ -91,14 +182,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 @restricted
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a message when the command /help is issued."""
-    help_text = (
-        "Available commands:\n"
-        "/start - Start the bot\n"
-        "/help - Show this help message\n"
-        "/bal <argument> - Check current account balance\n"
-        "/pay <argument> - Check account payment by month\n"
-    )
-    await update.message.reply_text(help_text)
+    lines = [
+        "Available commands:",
+        "/start - Start the bot",
+        "/help - Show this help message",
+        "/bal <account> - Check current account balance",
+    ]
+
+    bot_data = getattr(context, 'bot_data', None)
+    bql_aliases = []
+    if bot_data and hasattr(bot_data, 'bql_queries'):
+        bql_aliases = sorted(bot_data.bql_queries.keys())
+
+    if bql_aliases:
+        lines.append("/bql <alias> [args] - Run a configured ledger query")
+        lines.append("Shortcut queries: " + ', '.join(f"/{alias}" for alias in bql_aliases))
+
+    await update.message.reply_text('\n'.join(lines))
 
 @restricted
 async def bal(update: Update, context: CustomContext) -> None:
@@ -120,23 +220,54 @@ async def bal(update: Update, context: CustomContext) -> None:
     prefix = 'Multiple matches found, showing first.\n' if ambiguous else ''
     await update.message.reply_text(f"{prefix}{account}: {balance_text}")
 
-@restricted
-async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Run the make command and send the output when the command /pay is issued."""
-    argument = ' '.join(context.args)
-    if argument == '':
-        await update.message.reply_text('account is required')
-    else:
-        env = {}
-        env['account'] = argument
-        try:
-            result = subprocess.run(["make", "-f", MAKEFILE, 'pay'], env=env, capture_output=True, text=True)
-            output = result.stdout
-            print(output)
-        except subprocess.CalledProcessError as e:
-            output = f"An error occurred: {e.stderr}"
-        await update.message.reply_text(output)
 
+@restricted
+async def bql(update: Update, context: CustomContext) -> None:
+    """Execute a configured bean-query by alias."""
+    if not context.args:
+        await update.message.reply_text('Usage: /bql <query_alias> [args]')
+        return
+
+    alias = context.args[0].lower()
+    arguments = ' '.join(context.args[1:]).strip()
+    await _send_bql_response(update, context, alias, arguments)
+
+
+def build_bql_alias_handler(alias: str):
+    @restricted
+    async def handler(update: Update, context: CustomContext) -> None:
+        arguments = ' '.join(context.args).strip()
+        await _send_bql_response(update, context, alias, arguments)
+
+    handler.__name__ = f'bql_alias_{alias}'
+    return handler
+
+
+async def _send_bql_response(update: Update, context: CustomContext, alias: str, arguments: str) -> None:
+    accounts_data = context.bot_data
+    message = update.effective_message
+    if not message:
+        return
+
+    if not getattr(accounts_data, 'bql_connection', None):
+        await message.reply_text('BQL queries are not configured on this bot.')
+        return
+
+    try:
+        description, rows = accounts_data.run_bql_query(alias, arguments)
+    except KeyError:
+        await message.reply_text(f'Unknown query alias "{alias}".')
+        return
+    except ValueError as exc:
+        await message.reply_text(str(exc))
+        return
+    except Exception as exc:
+        logger.exception('Failed to run query %s', alias)
+        await message.reply_text(f'Failed to run query: {exc}')
+        return
+
+    result_text = format_bql_result(description, rows)
+    await message.reply_text(result_text)
 
 def get_leg_num(data)->int:
     """
@@ -183,6 +314,74 @@ def get_account(base, accounts):
         return r[0], 0
     else:
         return r[0], 1
+
+
+def build_bql_connection(entries, errors, options) -> Optional[Connection]:
+    try:
+        connection = Connection()
+        connection.attach('beancount://', entries=entries, errors=errors, options=options)
+        return connection
+    except Exception as exc:
+        logger.error('Unable to initialize beanquery connection: %s', exc)
+        return None
+
+
+def sanitize_bql_argument(argument: str) -> str:
+    escaped = argument.replace("'", "''")
+    return f"'{escaped}'"
+
+
+def render_bql_query(definition: BQLQueryDefinition, user_arguments: str) -> str:
+    query = definition.sql
+    if BQL_ARGUMENT_TOKEN in query:
+        if not user_arguments:
+            raise ValueError('This query requires an argument.')
+        sanitized = sanitize_bql_argument(user_arguments)
+        return query.replace(BQL_ARGUMENT_TOKEN, sanitized)
+    if user_arguments:
+        raise ValueError('This query does not take any arguments.')
+    return query
+
+
+def format_bql_value(value) -> str:
+    if value is None:
+        return ''
+    if isinstance(value, Decimal):
+        return format(value.normalize(), 'f')
+    return str(value)
+
+
+def format_bql_result(description: Sequence, rows: Sequence[Sequence]) -> str:
+    if not rows:
+        return 'No results.'
+
+    headers = [getattr(column, 'name', str(column)) for column in (description or [])]
+    sample_row = rows[0] if rows else []
+    if not headers:
+        headers = [f'col_{i + 1}' for i in range(len(sample_row))]
+
+    str_rows = [[format_bql_value(value) for value in row] for row in rows]
+    widths = [len(header) for header in headers]
+    for row in str_rows:
+        for index, cell in enumerate(row):
+            if index < len(widths):
+                widths[index] = max(widths[index], len(cell))
+            else:
+                widths.append(len(cell))
+
+    if len(headers) < len(widths):
+        next_index = len(headers)
+        for _ in range(len(widths) - len(headers)):
+            next_index += 1
+            headers.append(f'col_{next_index}')
+
+    def format_line(values):
+        return ' | '.join(value.ljust(widths[idx]) for idx, value in enumerate(values))
+
+    separator = '-+-'.join('-' * width for width in widths)
+    lines = [format_line(headers), separator]
+    lines.extend(format_line(row) for row in str_rows)
+    return '\n'.join(lines)
 
 
 def build_account_balances(entries) -> Dict[str, Inventory]:
@@ -369,7 +568,9 @@ def main() -> None:
     application.add_handler(CommandHandler("help", help_command))
 
     application.add_handler(CommandHandler("bal", bal))
-    application.add_handler(CommandHandler("pay", pay))
+    application.add_handler(CommandHandler("bql", bql))
+    for alias in BQL_QUERY_DEFINITIONS:
+        application.add_handler(CommandHandler(alias, build_bql_alias_handler(alias)))
     application.add_handler(CallbackQueryHandler(revert_transaction, pattern="^revert_transaction$"))
 
     # on non command i.e message - echo the message on Telegram

@@ -3,11 +3,14 @@ from beancount.loader import load_string
 
 from bot import (
     CURRENCY,
+    BQLQueryDefinition,
     build_account_balances,
     format_inventory,
+    format_bql_result,
     get_leg_num,
     parse_amount_currency,
     parse_message,
+    render_bql_query,
 )
 
 data_leg_num = [
@@ -99,3 +102,31 @@ class Test_Beanbot():
         balances = build_account_balances(entries)
 
         assert format_inventory(balances['Assets:Wallet']) == '200 CNY, 50 USD'
+
+    def test_render_bql_query_replaces_placeholder(self):
+        definition = BQLQueryDefinition(name='test', sql='account ~ [args]')
+        result = render_bql_query(definition, "Assets:Cash")
+        assert result == "account ~ 'Assets:Cash'"
+
+    def test_render_bql_query_validates_arguments(self):
+        definition = BQLQueryDefinition(name='static', sql='select * from postings')
+        with pytest.raises(ValueError):
+            render_bql_query(definition, 'unexpected')
+
+        needs_args = BQLQueryDefinition(name='needs', sql='account ~ [args]')
+        with pytest.raises(ValueError):
+            render_bql_query(needs_args, '')
+
+    def test_format_bql_result_produces_table(self):
+        class Column:
+            def __init__(self, name):
+                self.name = name
+
+        columns = [Column('account'), Column('total')]
+        rows = [
+            ('Assets:Cash', '70 USD'),
+            ('Expenses:Food', '30 USD'),
+        ]
+
+        table = format_bql_result(columns, rows)
+        assert 'account' in table and 'Assets:Cash' in table
