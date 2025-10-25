@@ -10,6 +10,5 @@ services:
       - TZ=Asia/Shanghai
     volumes:
       - /home/wogong/Dropbox/Server/data/bc:/data
-      - /home/wogong/Dropbox/Server/data/bc/Makefile.docker:/data/Makefile
       - ./src/.env.docker:/app/src/.env
     restart: always
