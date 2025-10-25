@@ -18,12 +18,15 @@ data_leg_num = [
    ("2739 4.5sgd 5587", 1),
    ("2739 4.5usd in:cup 0.5 5587", 2),
    ("2739 4.5 in:cup 0.5 9423 1.0 5587 还款", 3),
+   ("1234 -3.37 5587", 1),
 ]
 
 data_currency = [
         ("2.20", ("2.20", CURRENCY)),
         ("4.5sgd", ("4.5","SGD")),
         ("4USD", ("4","USD")),
+        ("-3.37", ("-3.37", CURRENCY)),
+        ("-7.5usd", ("-7.5","USD")),
         ]
 
 data_notes = [
@@ -37,6 +40,7 @@ data_legs = [
    ("xxxx 4.5 xxxx", [('xxxx', -4.5, CURRENCY), ('xxxx', 4.5, CURRENCY)]),
    ("2739 4.5 9423 2.3 yyyy", [('2739', -4.5, CURRENCY), ('9423', -2.3, CURRENCY), ('yyyy', 6.8, CURRENCY)]),
    ("2739 4.5 9423 2.3 ecard 5 yyyy", [('2739', -4.5, CURRENCY), ('9423', -2.3, CURRENCY), ('ecard', -5.0, CURRENCY), ('yyyy', 11.8, CURRENCY)]),
+   ("1234 -3.37 2345", [('1234', 3.37, CURRENCY), ('2345', -3.37, CURRENCY)]),
 ]
 
 LEDGER_SNIPPET = """

@@ -32,6 +32,7 @@ DEFAULT_CONFIG_PATH = SCRIPT_DIR / "config.yaml"
 CONFIG_PATH = Path(os.getenv("BOT_CONFIG", DEFAULT_CONFIG_PATH)).expanduser()
 BQL_ARGUMENT_TOKEN = "[args]"
 TELEGRAM_MESSAGE_LIMIT = 4096
+AMOUNT_TOKEN_PATTERN = re.compile(r'^([+-]?(?:\d+(?:\.\d+)?|\.\d+))([A-Za-z]*)$')
 
 # Enable logging
 logging.basicConfig(
@@ -374,9 +375,8 @@ def get_leg_num(data)->int:
         '5600 13.12 Jdou 6 ecard 5 ccc 小米编织数据线 3A' -> 3
     """
     n = 0
-    pattern = re.compile(r"\.|cny|usd|sgd|hkd|tl|rub", re.IGNORECASE)
-    while 2*n+1 < len(data) -1 and pattern.sub('',data[2*n+1]).isdigit():
-        n = n + 1
+    while 2 * n + 1 < len(data) - 1 and AMOUNT_TOKEN_PATTERN.match(data[2 * n + 1]):
+        n += 1
     return n
 
 
@@ -520,13 +520,14 @@ def parse_amount_currency(string):
         None
 
     """
-    match = re.match(r'^([\d\.]+)([A-Za-z]*)$', string)
-    if match:
-        amount = match.group(1)
-        currency = match.group(2) if match.group(2) else CURRENCY
-        return amount, currency.upper()
-    else:
+    match = AMOUNT_TOKEN_PATTERN.match(string)
+    if not match:
         print('Invalid amount format')
+        return None
+
+    amount = match.group(1)
+    currency = match.group(2) if match.group(2) else CURRENCY
+    return amount, currency.upper()
 
 
 def parse_message(msg):
@@ -557,7 +558,10 @@ def parse_message(msg):
     currency = CURRENCY
     for i in range(0, leg_num):
         account = data[2*i]
-        amount, currency = parse_amount_currency(data[2*i+1])
+        parsed = parse_amount_currency(data[2 * i + 1])
+        if not parsed:
+            raise ValueError('Invalid amount format')
+        amount, currency = parsed
         sum_amounts = sum_amounts + float(amount)
         leg = (account, -float(amount), currency)
         legs.append(leg)
@@ -580,8 +584,9 @@ async def bean(update: Update, context: CustomContext) -> None:
             legs, note = parse_message(message)
         except Exception as e:
             print(str(e))
-            response = 'error, {}'.format(str(e))
-            
+            response = f'error, {e}'
+            await update.message.reply_text(response)
+            return
         flags = 0
         transactions = ''
         for leg in legs:
