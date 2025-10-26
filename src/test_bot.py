@@ -1,6 +1,6 @@
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, time
 from pathlib import Path
 from decimal import Decimal
 
@@ -159,6 +159,37 @@ def test_parse_date_matchers_supports_day_and_iso():
     matchers = parse_date_matchers(["5", "2024-07-15"])
     assert any(m.day_of_month == 5 for m in matchers)
     assert any(m.exact_date == date(2024, 7, 15) for m in matchers)
+
+
+def test_auto_balance_config_defaults_runtime():
+    config_data = {
+        'auto_balance': {
+            'entries': [
+                {
+                    'date': 5,
+                    'accounts': [{'account': 'Assets:Cash', 'currency': 'USD', 'balance': '0'}],
+                }
+            ]
+        }
+    }
+    config = load_auto_balance_config(config_data, 'USD')
+    assert config.runtime == time(1, 0)
+
+
+def test_auto_balance_config_uses_runtime_from_config():
+    config_data = {
+        'auto_balance': {
+            'runtime': '05:45',
+            'entries': [
+                {
+                    'date': 5,
+                    'accounts': [{'account': 'Assets:Cash', 'currency': 'USD', 'balance': '0'}],
+                }
+            ]
+        }
+    }
+    config = load_auto_balance_config(config_data, 'USD')
+    assert config.runtime == time(5, 45)
 
 
 def test_auto_balance_manager_appends_balance(tmp_path):

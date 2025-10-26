@@ -11,7 +11,7 @@ queries:
 
 auto_balance:
   ledger: /path/to/auto_balance_output.beancount  # optional override; defaults to BEANCOUNT_OUTPUT
-  interval_seconds: 86400
+  runtime: "01:00"  # optional HH:MM; defaults to 01:00 if omitted
   entries:
     - date: 1
       description: Monthly credit cards (bill day 1)

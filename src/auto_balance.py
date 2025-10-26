@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import inspect
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from importlib import import_module
 from pathlib import Path
@@ -12,7 +12,7 @@ from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Seq
 from zoneinfo import ZoneInfo
 
 DEFAULT_PRECISION = 2
-DEFAULT_INTERVAL_SECONDS = 24 * 60 * 60  # once per day
+DEFAULT_RUNTIME = time(hour=1, minute=0)
 
 
 @dataclass(frozen=True)
@@ -69,7 +69,7 @@ class AutoBalanceEntry:
 class AutoBalanceConfig:
     entries: Sequence[AutoBalanceEntry]
     timezone: Optional[ZoneInfo]
-    interval_seconds: int = DEFAULT_INTERVAL_SECONDS
+    runtime: time = DEFAULT_RUNTIME
     ledger: Optional[str] = None
 
     def has_entries(self) -> bool:
@@ -246,8 +246,8 @@ def parse_account(entry: Dict[str, Any], default_currency: str) -> Optional[Auto
 def load_auto_balance_config(config_data: Dict[str, Any], default_currency: str) -> AutoBalanceConfig:
     section = config_data.get("auto_balance") or {}
     timezone = None
-    interval_seconds = DEFAULT_INTERVAL_SECONDS
     ledger = None
+    runtime = DEFAULT_RUNTIME
     entries_data: Iterable[Dict[str, Any]] = []
 
     if isinstance(section, dict):
@@ -257,7 +257,7 @@ def load_auto_balance_config(config_data: Dict[str, Any], default_currency: str)
                 timezone = ZoneInfo(timezone_name)
             except Exception:
                 timezone = None
-        interval_seconds = int(section.get("interval_seconds", DEFAULT_INTERVAL_SECONDS))
+        runtime = coerce_runtime(section.get("runtime"))
         ledger_value = section.get("ledger")
         if isinstance(ledger_value, str) and ledger_value.strip():
             ledger = ledger_value.strip()
@@ -294,10 +294,24 @@ def load_auto_balance_config(config_data: Dict[str, Any], default_currency: str)
             )
         )
 
-    return AutoBalanceConfig(entries=entries, timezone=timezone, interval_seconds=interval_seconds, ledger=ledger)
+    return AutoBalanceConfig(entries=entries, timezone=timezone, runtime=runtime, ledger=ledger)
 
 
 def default_fetcher_registry() -> Dict[str, Callable[..., Any]]:
     return {
         "constant": lambda value="0", **_: Decimal(str(value)),
     }
+
+
+def coerce_runtime(value: Any) -> time:
+    if isinstance(value, time):
+        return value.replace(tzinfo=None)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped:
+            try:
+                parsed = time.fromisoformat(stripped)
+                return parsed.replace(tzinfo=None)
+            except ValueError:
+                pass
+    return DEFAULT_RUNTIME

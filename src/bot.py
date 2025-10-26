@@ -726,9 +726,14 @@ def main() -> None:
     logger.info('Starting bot.')
 
     if AUTO_BALANCE_MANAGER and AUTO_BALANCE_MANAGER.config.has_entries() and application.job_queue:
-        interval = max(60, AUTO_BALANCE_MANAGER.config.interval_seconds)
         application.job_queue.run_once(auto_balance_job, when=0, name="auto_balance_startup")
-        application.job_queue.run_repeating(auto_balance_job, interval=interval, first=interval, name="auto_balance")
+        daily_kwargs = {
+            'time': AUTO_BALANCE_MANAGER.config.runtime,
+            'name': "auto_balance",
+        }
+        if AUTO_BALANCE_MANAGER.config.timezone:
+            daily_kwargs['timezone'] = AUTO_BALANCE_MANAGER.config.timezone
+        application.job_queue.run_daily(auto_balance_job, **daily_kwargs)
 
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
