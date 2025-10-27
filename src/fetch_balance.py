@@ -13,10 +13,19 @@ from dotenv import load_dotenv
 import crypto_balance as crypto
 
 
+CHAIN_ENDPOINT_ENV = {
+    "bsc": "BSC_ENDPOINT",
+    "ethereum": "ETH_ENDPOINT",
+}
+
+
 FETCHER_MAP: Dict[Tuple[str, str], Callable[..., object]] = {
     ("bnb", "bsc"): crypto.fetch_bnb_balance_on_bsc,
     ("usdt", "bsc"): crypto.fetch_usdt_balance_on_bsc,
     ("usdc", "bsc"): crypto.fetch_usdc_balance_on_bsc,
+    ("eth", "ethereum"): crypto.fetch_eth_balance_on_ethereum,
+    ("usdt", "ethereum"): crypto.fetch_usdt_balance_on_ethereum,
+    ("usdc", "ethereum"): crypto.fetch_usdc_balance_on_ethereum,
 }
 
 
@@ -57,7 +66,7 @@ def main() -> int:
         kwargs["api_key"] = args.api_key
     endpoint = args.endpoint
     if not endpoint:
-        env_key = f"{args.chain.upper()}_ENDPOINT"
+        env_key = CHAIN_ENDPOINT_ENV.get(args.chain.lower(), f"{args.chain.upper()}_ENDPOINT")
         endpoint = os.getenv(env_key)
     if endpoint:
         kwargs["endpoint"] = endpoint

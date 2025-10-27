@@ -42,3 +42,18 @@ auto_balance:
           api_function: crypto_balance.fetch_usdc_balance_on_bsc
           args:
             address: "0xabc..."
+        - account: Assets:Crypto:ETHWallet
+          currency: ETH
+          api_function: crypto_balance.fetch_eth_balance_on_ethereum
+          args:
+            address: "0xabc..."
+        - account: Assets:Crypto:ETHWallet:USDT
+          currency: USDT
+          api_function: crypto_balance.fetch_usdt_balance_on_ethereum
+          args:
+            address: "0xabc..."
+        - account: Assets:Crypto:ETHWallet:USDC
+          currency: USDC
+          api_function: crypto_balance.fetch_usdc_balance_on_ethereum
+          args:
+            address: "0xabc..."

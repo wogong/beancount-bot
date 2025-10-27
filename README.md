@@ -102,12 +102,27 @@ auto_balance:
           api_function: crypto_balance.fetch_usdc_balance_on_bsc
           args:
             address: "0xabc..."
+        - account: Assets:Crypto:ETHWallet
+          currency: ETH
+          api_function: crypto_balance.fetch_eth_balance_on_ethereum
+          args:
+            address: "0xabc..."
+        - account: Assets:Crypto:ETHWallet:USDT
+          currency: USDT
+          api_function: crypto_balance.fetch_usdt_balance_on_ethereum
+          args:
+            address: "0xabc..."
+        - account: Assets:Crypto:ETHWallet:USDC
+          currency: USDC
+          api_function: crypto_balance.fetch_usdc_balance_on_ethereum
+          args:
+            address: "0xabc..."
 ```
 
 - The bot runs the auto-balance job once at startup and then every configured interval (default daily). When the current date matches an entry, it appends the balance assertion to the configured ledger file and notifies the owner in Telegram. Duplicate lines for the same date/account are skipped if they already exist in the ledger.
 - For accounts that can fetch balances from an API (e.g., crypto wallets), specify `api_function` plus an `args` mapping. Functions can be either built-in (see `auto_balance.py`) or any dotted import path that returns the numeric balance; the bot awaits coroutine results as well. Omit `api_function` to fall back to the static `balance` value (default `0`).
 - The auto-balance scheduler uses python-telegram-bot’s JobQueue subsystem. Make sure the dependency is installed with the `job-queue` extra (`pip install "python-telegram-bot[job-queue]"` or run `uv sync` with the provided requirements).
-- `src/crypto_balance.py` contains example fetchers (`fetch_wallet_balance`, `fetch_bnb_balance_on_bsc`, `fetch_usdt_balance_on_bsc`, `fetch_usdc_balance_on_bsc`) that you can copy and extend to integrate with your real APIs. Network endpoints are read from `.env` (e.g., set `BSC_ENDPOINT=https://bsc-mainnet.infura.io/v3/<project_id>`).
+- `src/crypto_balance.py` contains example fetchers (`fetch_wallet_balance`, `fetch_bnb_balance_on_bsc`, `fetch_usdt_balance_on_bsc`, `fetch_usdc_balance_on_bsc`, `fetch_eth_balance_on_ethereum`, `fetch_usdt_balance_on_ethereum`, `fetch_usdc_balance_on_ethereum`) that you can copy and extend to integrate with your real APIs. Network endpoints are read from `.env` (e.g., set `BSC_ENDPOINT=https://bsc-mainnet.infura.io/v3/<project_id>` or `ETH_ENDPOINT=https://mainnet.infura.io/v3/<project_id>`).
 
 ## TODO
 

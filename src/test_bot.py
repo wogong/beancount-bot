@@ -26,8 +26,11 @@ from bot import (
 )
 from crypto_balance import (
     fetch_bnb_balance_on_bsc,
+    fetch_eth_balance_on_ethereum,
     fetch_usdt_balance_on_bsc,
+    fetch_usdt_balance_on_ethereum,
     fetch_usdc_balance_on_bsc,
+    fetch_usdc_balance_on_ethereum,
 )
 
 data_leg_num = [
@@ -337,4 +340,72 @@ def test_fetch_usdc_balance_on_bsc_respects_decimals():
 
     assert captured['body']['method'] == 'eth_call'
     assert captured['body']['params'][0]['to'].lower() == '0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d'
+    assert balance == Decimal('0.5')
+
+
+def test_fetch_eth_balance_on_ethereum_parses_rpc_response():
+    class DummyResponse:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def read(self):
+            return json.dumps(self.payload).encode('utf-8')
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    def open_stub(req, timeout):
+        body = json.loads(req.data.decode('utf-8'))
+        assert body['method'] == 'eth_getBalance'
+        assert body['params'][0] == '0xb794f5ea0ba39494ce839613fffba74279579268'
+        return DummyResponse({'jsonrpc': '2.0', 'id': 1, 'result': hex(2 * 10**18)})
+
+    balance = fetch_eth_balance_on_ethereum(
+        address='0xb794f5ea0ba39494ce839613fffba74279579268',
+        api_key='key',
+        opener=open_stub,
+    )
+    assert balance == Decimal('2')
+
+
+def test_fetch_usdt_balance_on_ethereum_uses_token_contract():
+    captured = {}
+
+    def open_stub(req, timeout):
+        body = json.loads(req.data.decode('utf-8'))
+        captured['body'] = body
+        return _dummy_rpc_response(hex(1_230_000))
+
+    balance = fetch_usdt_balance_on_ethereum(
+        address='0xb794f5ea0ba39494ce839613fffba74279579268',
+        api_key='key',
+        opener=open_stub,
+    )
+
+    params = captured['body']['params']
+    assert captured['body']['method'] == 'eth_call'
+    assert params[0]['to'].lower() == '0xdac17f958d2ee523a2206206994597c13d831ec7'
+    assert params[0]['data'].startswith('0x70a08231')
+    assert balance == Decimal('1.23')
+
+
+def test_fetch_usdc_balance_on_ethereum_respects_decimals():
+    captured = {}
+
+    def open_stub(req, timeout):
+        body = json.loads(req.data.decode('utf-8'))
+        captured['body'] = body
+        return _dummy_rpc_response(hex(500_000))
+
+    balance = fetch_usdc_balance_on_ethereum(
+        address='0xb794f5ea0ba39494ce839613fffba74279579268',
+        api_key='key',
+        opener=open_stub,
+    )
+
+    assert captured['body']['method'] == 'eth_call'
+    assert captured['body']['params'][0]['to'].lower() == '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
     assert balance == Decimal('0.5')
