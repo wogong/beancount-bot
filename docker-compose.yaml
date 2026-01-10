@@ -1,14 +1,20 @@
 services:
   beanbot:
-    build:
-      context: "."
-      dockerfile: Dockerfile
+    # Use pre-built image from GitHub Container Registry
+    image: ghcr.io/wogong/beancount-bot:master
+
+    # Or build locally (uncomment the lines below and comment out the image line above)
+    # build:
+    #   context: "."
+    #   dockerfile: Dockerfile
+
     container_name: beanbot
     environment:
       - PUID=1000
       - PGID=1000
       - TZ=Asia/Shanghai
     volumes:
+      # Update this path to your beancount files directory
       - /home/wogong/Dropbox/Server/data/bc:/data
       - ./src/.env.docker:/app/src/.env
     restart: always

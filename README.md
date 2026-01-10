@@ -48,12 +48,20 @@ A lightweight Telegram bot for adding transactions to your Beancount ledger file
 
 ### Docker Compose Configuration
 
-Update `docker-compose.yaml` with your paths:
+The `docker-compose.yaml` uses the pre-built image from GitHub Container Registry by default:
+
+```yaml
+image: ghcr.io/wogong/beancount-bot:master
+```
+
+Update the volumes section with your beancount files path:
 ```yaml
 volumes:
   - /path/to/your/beancount/files:/data
   - ./src/.env.docker:/app/src/.env
 ```
+
+To build locally instead, uncomment the build section in `docker-compose.yaml`.
 
 ## Usage
 
@@ -130,7 +138,7 @@ The bot automatically publishes Docker images to GitHub Container Registry on ev
 
 **Pull pre-built image:**
 ```bash
-docker pull ghcr.io/your-username/beancount-bot:master
+docker pull ghcr.io/wogong/beancount-bot:master
 ```
 
 **Build locally:**
