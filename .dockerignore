@@ -1,0 +1,46 @@
+# Git
+.git
+.gitignore
+.github
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+.venv
+venv
+
+# IDEs
+.vscode
+.idea
+*.swp
+*.swo
+
+# Docker
+docker-compose.yml
+Dockerfile
+.dockerignore
+
+# Documentation
+*.md
+README*
+LICENSE
+
+# Environment files (should be mounted as volumes)
+src/.env
+src/.env.*
+!src/.env.example
+
+# Data files (should be mounted as volumes)
+/data
+
+# Temporary files
+*.log
+.DS_Store
