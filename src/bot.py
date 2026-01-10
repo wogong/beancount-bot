@@ -1,23 +1,16 @@
 import os
 import re
 import logging
-from dataclasses import dataclass
+from collections import OrderedDict
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence
 from functools import wraps
-
-from beancount.loader import load_file
-from beancount.core import data
-from beancount.core.inventory import Inventory
-from beanquery import Connection
 
 from telegram import ForceReply, Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, CallbackContext, ContextTypes, ExtBot, MessageHandler, filters
 
 from dotenv import load_dotenv
-import yaml
 
 load_dotenv()
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -28,10 +21,6 @@ CURRENCY = os.getenv("CURRENCY")
 CHAT_ID = os.getenv("CHAT_ID")
 ALLOWED_USERS = [int(CHAT_ID)]
 PROXY = os.getenv("PROXY")
-DEFAULT_CONFIG_PATH = SCRIPT_DIR / "config.yaml"
-CONFIG_PATH = Path(os.getenv("BOT_CONFIG", DEFAULT_CONFIG_PATH)).expanduser()
-BQL_ARGUMENT_TOKEN = "[args]"
-TELEGRAM_MESSAGE_LIMIT = 4096
 AMOUNT_TOKEN_PATTERN = re.compile(r'^([+-]?(?:\d+(?:\.\d+)?|\.\d+))([A-Za-z]*)$')
 
 # Enable logging
@@ -44,171 +33,31 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
-def load_bot_config() -> Dict[str, Any]:
-    if not CONFIG_PATH.exists():
-        logger.info("No config file at %s; using defaults only.", CONFIG_PATH)
-        return {}
-
-    try:
-        with CONFIG_PATH.open("r", encoding="utf-8") as config_file:
-            return yaml.safe_load(config_file) or {}
-    except Exception as error:
-        logger.error("Failed to read %s: %s", CONFIG_PATH, error)
-        return {}
-
-
-@dataclass(frozen=True)
-class BQLQueryDefinition:
-    name: str
-    sql: str
-    description: Optional[str] = None
-
-
-DEFAULT_BQL_QUERIES: Dict[str, BQLQueryDefinition] = {
-    "pay": BQLQueryDefinition(
-        name="pay",
-        sql=(
-            "select account, month(date) as month, sum(position) "
-            "from year=2025 where account ~ [args] and number<0 "
-            "group by account, month order by month desc"
-        ),
-        description="Monthly outgoing totals for matching accounts (2025).",
-    ),
-}
-
-
-def _coerce_query_definition(alias: str, raw_value) -> Optional[BQLQueryDefinition]:
-    if isinstance(raw_value, str):
-        sql = raw_value
-        description = None
-    elif isinstance(raw_value, dict):
-        sql = raw_value.get("query") or raw_value.get("sql")
-        description = raw_value.get("description")
-    else:
-        logger.warning("Ignoring query alias %s: unsupported config value", alias)
-        return None
-
-    if not sql:
-        logger.warning("Ignoring query alias %s: missing SQL text", alias)
-        return None
-
-    return BQLQueryDefinition(name=alias, sql=str(sql), description=description)
-
-
-def load_bql_query_definitions(config_data: Optional[Dict[str, Any]] = None) -> Dict[str, BQLQueryDefinition]:
-    definitions = dict(DEFAULT_BQL_QUERIES)
-
-    if not config_data:
-        return definitions
-
-    queries = config_data.get("queries") or {}
-    if not isinstance(queries, dict):
-        logger.warning("Config file %s has invalid 'queries' section; expected mapping.", CONFIG_PATH)
-        return definitions
-
-    for alias, raw_value in queries.items():
-        normalized_alias = alias.lower()
-        definition = _coerce_query_definition(normalized_alias, raw_value)
-        if definition:
-            definitions[normalized_alias] = definition
-
-    return definitions
-
-BOT_CONFIG = load_bot_config()
-BQL_QUERY_DEFINITIONS = load_bql_query_definitions(BOT_CONFIG)
-
-
-def format_loader_error(error) -> str:
-    """Return a concise description of a beancount loader error."""
-    message = getattr(error, 'message', str(error))
-    source = getattr(error, 'source', None)
-    filename = None
-    lineno = None
-
-    if isinstance(source, dict):
-        filename = source.get('filename') or ''
-        lineno = source.get('lineno')
-
-    location = ''
-    if filename:
-        location = str(filename)
-        if lineno:
-            location = f'{location}:{lineno}'
-    elif lineno:
-        location = f'line {lineno}'
-
-    if location:
-        return f'{location} - {message}'
-    return message
-
-
-def format_loader_errors(errors: Sequence) -> str:
-    return '\n'.join(format_loader_error(error) for error in errors)
-
-
-async def reply_with_chunks(message, text: str, chunk_size: int = TELEGRAM_MESSAGE_LIMIT - 200) -> None:
-    """Reply to a Telegram message, splitting content to avoid length limits."""
-    if not text or not message:
-        return
-
-    chunk_size = max(1, chunk_size)
-    for start in range(0, len(text), chunk_size):
-        await message.reply_text(text[start:start + chunk_size])
-
-
 class AccountsData:
     """Custom class for chat_data. Here we store data per message."""
 
     def __init__(self) -> None:
         self.accounts = set()
-        self.balances: Dict[str, Inventory] = {}
-        self.bql_queries = dict(BQL_QUERY_DEFINITIONS)
-        self.bql_connection: Optional[Connection] = None
-        self.last_errors: Sequence = []
-        self.reload()
+        self.load_accounts_from_file()
+
+    def load_accounts_from_file(self):
+        """Load accounts from accounts.list file."""
+        accounts_file = Path(BEANCOUNT_ROOT).parent / "accounts.list"
+        if accounts_file.exists():
+            try:
+                with accounts_file.open('r', encoding='utf-8') as f:
+                    self.accounts = set(line.strip() for line in f if line.strip())
+                logger.info('Loaded %d accounts from accounts.list', len(self.accounts))
+            except Exception as e:
+                logger.error('Failed to load accounts.list: %s', e)
+                self.accounts = set()
+        else:
+            logger.warning('accounts.list not found, will be generated on first use')
+            self.accounts = set()
 
     def reload(self):
-        entries, errors, options = load_file(BEANCOUNT_ROOT)
-        accounts = set()
-
-        for entry in entries:
-            if isinstance(entry, data.Open):
-                accounts.add(entry.account)
-            if isinstance(entry, data.Close):
-                accounts.discard(entry.account)
-
-        self.accounts = accounts
-        self.balances = build_account_balances(entries)
-        self.bql_connection = build_bql_connection(entries, errors, options)
-        self.last_errors = errors or []
-        self._log_loader_errors(self.last_errors)
-        logger.info('Finished initiating accounts set, balances, and BQL context.')
-        return self.last_errors
-
-    @staticmethod
-    def _log_loader_errors(errors: Sequence) -> None:
-        if not errors:
-            logger.info('Ledger loaded without errors.')
-            return
-
-        logger.error('Ledger loaded with %d error(s).', len(errors))
-        for error in errors:
-            logger.error('Ledger error: %s', format_loader_error(error))
-
-    def run_bql_query(self, alias: str, arguments: str):
-        if not self.bql_connection:
-            raise RuntimeError('BQL connection is not available.')
-
-        definition = self.bql_queries.get(alias)
-        if not definition:
-            raise KeyError(alias)
-
-        query_text = render_bql_query(definition, arguments)
-        cursor = self.bql_connection.cursor()
-        cursor.execute(query_text)
-        description = cursor.description or []
-        rows = cursor.fetchall()
-        return description, rows
+        """Reload accounts from file."""
+        self.load_accounts_from_file()
 
 
 class CustomContext(CallbackContext[ExtBot, dict, dict, AccountsData]):
@@ -253,116 +102,29 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "Available commands:",
         "/start - Start the bot",
         "/help - Show this help message",
-        "/bal <account> - Check current account balance",
-        "/reload - Reload the ledger file",
+        "/reload - Reload accounts from accounts.list",
     ]
 
     bot_data = getattr(context, 'bot_data', None)
-    bql_aliases = []
-    if bot_data and hasattr(bot_data, 'bql_queries'):
-        bql_aliases = sorted(bot_data.bql_queries.keys())
-
-    if bql_aliases:
-        lines.append("/bql <alias> [args] - Run a configured ledger query")
-        lines.append("Shortcut queries: " + ', '.join(f"/{alias}" for alias in bql_aliases))
 
     await update.message.reply_text('\n'.join(lines))
-
-@restricted
-async def bal(update: Update, context: CustomContext) -> None:
-    """Return the balance for the account matching the provided argument."""
-    argument = ' '.join(context.args).strip()
-    if argument == '':
-        await update.message.reply_text('account is required')
-        return
-
-    accounts_data = context.bot_data
-    account, ambiguous = get_account(argument, accounts_data.accounts)
-
-    if account == 'TODO':
-        await update.message.reply_text(f'No account matched "{argument}".')
-        return
-
-    balance = accounts_data.balances.get(account)
-    balance_text = format_inventory(balance)
-    prefix = 'Multiple matches found, showing first.\n' if ambiguous else ''
-    await update.message.reply_text(f"{prefix}{account}: {balance_text}")
-
-
-@restricted
-async def bql(update: Update, context: CustomContext) -> None:
-    """Execute a configured bean-query by alias."""
-    if not context.args:
-        await update.message.reply_text('Usage: /bql <query_alias> [args]')
-        return
-
-    alias = context.args[0].lower()
-    arguments = ' '.join(context.args[1:]).strip()
-    await _send_bql_response(update, context, alias, arguments)
 
 
 @restricted
 async def reload_ledger(update: Update, context: CustomContext) -> None:
-    """Reload the ledger file so balances reflect the latest entries."""
+    """Reload accounts from accounts.list file."""
     message = update.effective_message
     if not message:
         return
 
     accounts_data = context.bot_data
     try:
-        errors = accounts_data.reload()
+        accounts_data.reload()
+        await message.reply_text(f'Reloaded {len(accounts_data.accounts)} accounts from accounts.list')
     except Exception as exc:
-        logger.exception('Failed to reload ledger.')
-        await message.reply_text(f'Ledger reload failed: {exc}')
-        return
+        logger.exception('Failed to reload accounts.')
+        await message.reply_text(f'Accounts reload failed: {exc}')
 
-    response_lines = ['Ledger reloaded via load_file (line 117).']
-    if errors:
-        error_block = format_loader_errors(errors)
-        response_lines.append(f'{len(errors)} error(s) reported:')
-        if error_block:
-            response_lines.append(error_block)
-    else:
-        response_lines.append('No loader errors were reported.')
-
-    await reply_with_chunks(message, '\n'.join(response_lines))
-
-
-def build_bql_alias_handler(alias: str):
-    @restricted
-    async def handler(update: Update, context: CustomContext) -> None:
-        arguments = ' '.join(context.args).strip()
-        await _send_bql_response(update, context, alias, arguments)
-
-    handler.__name__ = f'bql_alias_{alias}'
-    return handler
-
-
-async def _send_bql_response(update: Update, context: CustomContext, alias: str, arguments: str) -> None:
-    accounts_data = context.bot_data
-    message = update.effective_message
-    if not message:
-        return
-
-    if not getattr(accounts_data, 'bql_connection', None):
-        await message.reply_text('BQL queries are not configured on this bot.')
-        return
-
-    try:
-        description, rows = accounts_data.run_bql_query(alias, arguments)
-    except KeyError:
-        await message.reply_text(f'Unknown query alias "{alias}".')
-        return
-    except ValueError as exc:
-        await message.reply_text(str(exc))
-        return
-    except Exception as exc:
-        logger.exception('Failed to run query %s', alias)
-        await message.reply_text(f'Failed to run query: {exc}')
-        return
-
-    result_text = format_bql_result(description, rows)
-    await message.reply_text(result_text)
 
 def get_leg_num(data)->int:
     """
@@ -408,107 +170,6 @@ def get_account(base, accounts):
         return r[0], 0
     else:
         return r[0], 1
-
-
-def build_bql_connection(entries, errors, options) -> Optional[Connection]:
-    try:
-        connection = Connection()
-        connection.attach('beancount://', entries=entries, errors=errors, options=options)
-        return connection
-    except Exception as exc:
-        logger.error('Unable to initialize beanquery connection: %s', exc)
-        return None
-
-
-def sanitize_bql_argument(argument: str) -> str:
-    escaped = argument.replace("'", "''")
-    return f"'{escaped}'"
-
-
-def render_bql_query(definition: BQLQueryDefinition, user_arguments: str) -> str:
-    query = definition.sql
-    if BQL_ARGUMENT_TOKEN in query:
-        if not user_arguments:
-            raise ValueError('This query requires an argument.')
-        sanitized = sanitize_bql_argument(user_arguments)
-        return query.replace(BQL_ARGUMENT_TOKEN, sanitized)
-    if user_arguments:
-        raise ValueError('This query does not take any arguments.')
-    return query
-
-
-def format_bql_value(value) -> str:
-    if value is None:
-        return ''
-    if isinstance(value, Decimal):
-        return format(value.normalize(), 'f')
-    return str(value)
-
-
-def format_bql_result(description: Sequence, rows: Sequence[Sequence]) -> str:
-    if not rows:
-        return 'No results.'
-
-    headers = [getattr(column, 'name', str(column)) for column in (description or [])]
-    sample_row = rows[0] if rows else []
-    if not headers:
-        headers = [f'col_{i + 1}' for i in range(len(sample_row))]
-
-    str_rows = [[format_bql_value(value) for value in row] for row in rows]
-    widths = [len(header) for header in headers]
-    for row in str_rows:
-        for index, cell in enumerate(row):
-            if index < len(widths):
-                widths[index] = max(widths[index], len(cell))
-            else:
-                widths.append(len(cell))
-
-    if len(headers) < len(widths):
-        next_index = len(headers)
-        for _ in range(len(widths) - len(headers)):
-            next_index += 1
-            headers.append(f'col_{next_index}')
-
-    def format_line(values):
-        return ' | '.join(value.ljust(widths[idx]) for idx, value in enumerate(values))
-
-    separator = '-+-'.join('-' * width for width in widths)
-    lines = [format_line(headers), separator]
-    lines.extend(format_line(row) for row in str_rows)
-    return '\n'.join(lines)
-
-
-def build_account_balances(entries) -> Dict[str, Inventory]:
-    """Aggregate balances for every account present in the ledger entries."""
-    balances: Dict[str, Inventory] = {}
-
-    for entry in entries:
-        if isinstance(entry, data.Transaction):
-            for posting in entry.postings:
-                if posting.units is None:
-                    continue
-                balances.setdefault(posting.account, Inventory()).add_amount(posting.units)
-
-    return balances
-
-
-def format_inventory(inventory: Optional[Inventory]) -> str:
-    """Render a Beancount inventory as a human readable string."""
-    if inventory is None or inventory.is_empty():
-        return '0'
-
-    positions = sorted(
-        (position for position in inventory if position.units),
-        key=lambda position: position.units.currency,
-    )
-
-    formatted_amounts = []
-    for position in positions:
-        amount = position.units
-        number = format(amount.number.normalize(), 'f')
-        formatted_amounts.append(f"{number} {amount.currency}")
-
-    return ', '.join(formatted_amounts)
 
 
 def parse_amount_currency(string):
@@ -614,8 +275,15 @@ async def bean(update: Update, context: CustomContext) -> None:
             [[InlineKeyboardButton(text='Revert', callback_data='revert_transaction')]]
         )
         sent_message = await update.message.reply_text(response, reply_markup=keyboard)
-        pending_transactions = context.chat_data.setdefault('pending_transactions', {})
+        pending_transactions = context.chat_data.setdefault('pending_transactions', OrderedDict())
         pending_transactions[sent_message.message_id] = transactions
+
+        # Limit to most recent 50 transactions
+        MAX_PENDING = 50
+        if len(pending_transactions) > MAX_PENDING:
+            # Remove oldest
+            oldest_key = next(iter(pending_transactions))
+            pending_transactions.pop(oldest_key)
 
 
 @restricted
@@ -624,7 +292,7 @@ async def revert_transaction(update: Update, context: CustomContext) -> None:
     if query is None or query.message is None:
         return
 
-    pending_transactions = context.chat_data.get('pending_transactions', {})
+    pending_transactions = context.chat_data.get('pending_transactions', OrderedDict())
     transaction = pending_transactions.get(query.message.message_id)
 
     if transaction is None:
@@ -651,12 +319,67 @@ async def revert_transaction(update: Update, context: CustomContext) -> None:
     await query.edit_message_text(updated_text)
 
 
+def generate_accounts_list():
+    """Generate accounts.list file from beancount output, ordered by usage frequency."""
+    accounts_file = Path(BEANCOUNT_ROOT).parent / "accounts.list"
+
+    # If file already exists, skip generation
+    if accounts_file.exists():
+        logger.info('accounts.list already exists, skipping generation')
+        return
+
+    logger.info('Generating accounts.list from beancount output...')
+
+    # Count account usage from the output file
+    account_counts = {}
+
+    try:
+        if not os.path.exists(BEANCOUNT_OUTPUT):
+            logger.warning('BEANCOUNT_OUTPUT file not found: %s', BEANCOUNT_OUTPUT)
+            return
+
+        with open(BEANCOUNT_OUTPUT, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                # Match account lines in transactions (lines starting with account names)
+                # Typical format: "    Assets:Cash  100.00 CNY"
+                if line and not line.startswith(('*', '!', ';', 'option', 'plugin', 'include')):
+                    # Try to extract account name (before amount or at start of posting line)
+                    parts = line.split()
+                    if parts:
+                        # Check if first part looks like an account (contains colons)
+                        potential_account = parts[0]
+                        if ':' in potential_account and not potential_account.startswith(('20', '19')):
+                            # It's likely an account name
+                            account_counts[potential_account] = account_counts.get(potential_account, 0) + 1
+
+        if not account_counts:
+            logger.warning('No accounts found in BEANCOUNT_OUTPUT')
+            return
+
+        # Sort by usage count (descending), then alphabetically
+        sorted_accounts = sorted(account_counts.items(), key=lambda x: (-x[1], x[0]))
+
+        # Write to file
+        with accounts_file.open('w', encoding='utf-8') as f:
+            for account, _ in sorted_accounts:
+                f.write(f'{account}\n')
+
+        logger.info('Generated accounts.list with %d accounts', len(sorted_accounts))
+
+    except Exception as e:
+        logger.error('Failed to generate accounts.list: %s', e)
+
+
 def main() -> None:
+    # Generate accounts.list if it doesn't exist
+    generate_accounts_list()
+
     context_types = ContextTypes(context=CustomContext, bot_data=AccountsData)
 
     """Start the bot."""
     # Create the Application and pass it your bot's token.
-    if len(PROXY) > 5:
+    if PROXY and len(PROXY) > 5:
         logging.info(f'use proxy {PROXY}')
         application = Application.builder().token(BOT).proxy(PROXY).get_updates_proxy(PROXY).context_types(context_types).build()
     else:
@@ -666,13 +389,7 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
 
-    application.add_handler(CommandHandler("bal", bal))
     application.add_handler(CommandHandler("reload", reload_ledger))
-    application.add_handler(CommandHandler("bql", bql))
-    for alias in BQL_QUERY_DEFINITIONS:
-        application.add_handler(CommandHandler(alias, build_bql_alias_handler(alias)))
-    application.add_handler(CallbackQueryHandler(revert_transaction, pattern="^revert_transaction$"))
-
     # on non command i.e message - echo the message on Telegram
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, callback = bean))
 

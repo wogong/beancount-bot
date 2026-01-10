@@ -1,77 +1,169 @@
 # Beancount Bot
 
-This is a Telegram bot that allows you to add transactions to your Beancount file.
+A lightweight Telegram bot for adding transactions to your Beancount ledger file with fuzzy account matching.
 
-## Steps
+## Features
 
-### Download repo and use Python
+- Add transactions via simple Telegram messages
+- Fuzzy account name matching for fast entry
+- Multi-leg transaction support
+- Account completion based on usage frequency
+- Transaction revert functionality
+- Docker support with GitHub Container Registry
 
-1. Create a new bot with @BotFather and obtain its token.
-2. Obtain your UserID with @userinfobot.
-3. Download this repo and copy the `src/env.example` file to `src/.env` and update the config file with your own values.
-4. Install the required packages with `python3 -m pip install -r requirements.txt`, then run the bot with `python3 src/bot.py`.
-5. Or, if you use `uv`, just run `uv run src/bot.py`.
+## Quick Start
 
-### Docker-Compose
-Step 1-4 are same as above, make sure you have docker and docker-compose installed.
+### Using Docker (Recommended)
 
-5. Update volume paths in docker-compose.yml, then run `docker-compose up`
+1. Create a bot with [@BotFather](https://t.me/BotFather) and get your bot token
+2. Get your Telegram User ID from [@userinfobot](https://t.me/userinfobot)
+3. Create a `.env` file with your configuration:
+   ```bash
+   BOT=your_bot_token_here
+   CHAT_ID=your_telegram_user_id
+   BEANCOUNT_ROOT=/data/main.beancount
+   BEANCOUNT_OUTPUT=/data/transactions.beancount
+   CURRENCY=CNY
+   PROXY=  # Optional: leave empty if not needed
+   ```
+4. Run with Docker Compose:
+   ```bash
+   docker-compose up -d
+   ```
+
+### Using Python Directly
+
+1. Create a bot with [@BotFather](https://t.me/BotFather) and get your bot token
+2. Get your Telegram User ID from [@userinfobot](https://t.me/userinfobot)
+3. Copy `src/.env.example` to `src/.env` and update with your values
+4. Install dependencies and run:
+   ```bash
+   # Using uv (recommended)
+   uv run src/bot.py
+
+   # Or using pip
+   python3 -m pip install -r requirements.txt
+   python3 src/bot.py
+   ```
+
+### Docker Compose Configuration
+
+Update `docker-compose.yaml` with your paths:
+```yaml
+volumes:
+  - /path/to/your/beancount/files:/data
+  - ./src/.env.docker:/app/src/.env
+```
 
 ## Usage
 
-Message the bot and it will reply with the generated transactions or error information.
+### Adding Transactions
 
-### Message format
+Send a message to the bot with the following format:
 
-The message format that the bot accepts is as follows:
+```
+{account_from1 amount1} {account_from2 amount2} ... account_to note
+```
 
-`{account_from1 amount1} {account_from2 amount2} ... account_to note`
+**Rules:**
+- Account names use fuzzy matching (similar to vim/vscode completion)
+- First `2n+1` space-separated tokens are parsed as accounts and amounts
+- Everything after that becomes the transaction note
+- Transactions with ambiguous account matches are marked with `!`
+- Each transaction gets a "Revert" button to undo if needed
 
-- The `account_from` and `account_to` variables will be used as a query to your accounts. Match algo is basically the same as account completion you use in vim or vscode.
-- The first `2n+1`` variables must be separated by a space, and the remaining strings will be treated as the note(can be left empty).
-- Transactions that the bot is unsure about will be marked with `!`. (like multiple accounts matched)
+**Examples:**
 
-example:
+1. Simple two-leg transaction:
+   ```
+   1234 20 Restau 中饭
+   ```
+   Generates:
+   ```beancount
+   2024-01-10 * "" "中饭"
+       Assets:Savings:BOC1234 -20.00 CNY
+       Expenses:Food:Restaurant 20.00 CNY
+   ```
 
-1. `1234 20 Restau 中饭` generates
-
-    ```
-    2023-07-13 * "" "中饭"
-        Assets:Savings:BOC1234 -20.00 CNY
-        Expenses:Food:Restaurent
-    ```
-
-2. `1234 48.12 in:alibaba 1.88 fruit 水果：西瓜 菠萝蜜` generates
-
-    ```
-    2023-07-13 * "" "水果：西瓜 菠萝蜜"
-        Assets:Savings:BOC1234 -48.12 CNY
-        Income:Bonus:Alibaba -1.88 CNY
-        Expenses:Food:Fruit 50.00 CNY
-    ```
+2. Multi-leg transaction:
+   ```
+   1234 48.12 in:alibaba 1.88 fruit 水果：西瓜 菠萝蜜
+   ```
+   Generates:
+   ```beancount
+   2024-01-10 * "" "水果：西瓜 菠萝蜜"
+       Assets:Savings:BOC1234 -48.12 CNY
+       Income:Bonus:Alibaba -1.88 CNY
+       Expenses:Food:Fruit 50.00 CNY
+   ```
 
 ### Commands
 
-- You can use `/bal 1234` to query the balance of account~'1234'.
-- You can use `/pay 2345` to query the monthly payment of account~'2345' in curent year.
-- `/reload` tells the bot to re-run `load_file` (see `src/bot.py`, line 117) so that balances, BQL queries, and account lists reflect any ledger edits you made outside the bot. The response will echo any loader errors, split across multiple Telegram messages if needed to avoid API limits.
-- Add any other commands you like, remember to add corresponding commands in your Makefile and `src/bot.py`.
+- `/start` - Start the bot
+- `/help` - Show available commands
+- `/reload` - Reload account list from `accounts.list` file
 
-### Ledger reload & validation feedback
+### Account Completion
 
-- When the bot starts, `AccountsData` immediately runs `load_file` and logs each loader error (with filename:line information) to the console, making it easier to diagnose ledger issues before chatting with the bot.
-- Running `/reload` later shows the same loader output in-chat, prefixed with `load_file (line 117)` so you know exactly which call produced the diagnostics.
+The bot uses an `accounts.list` file for fuzzy account matching:
 
-## TODO
+- Generated automatically on first startup from your beancount output file
+- Accounts are sorted by usage frequency (most used first)
+- Located in the same directory as your `BEANCOUNT_ROOT` file
+- Manually edit or regenerate by deleting and restarting the bot
 
-- [x] fuzzy match
-- [x] docker deployment
-- [x] support multiple legs
-- [x] unit test
-- [x] add commands to run `bean-query`
-- [x] reload beancount file
+## Development
+
+### Running Tests
+
+```bash
+# Using pytest
+pytest src/test_bot.py
+
+# Using uv
+uv run pytest src/test_bot.py
+```
+
+### Building Docker Image
+
+The bot automatically publishes Docker images to GitHub Container Registry on every push to master or version tag.
+
+**Pull pre-built image:**
+```bash
+docker pull ghcr.io/your-username/beancount-bot:master
+```
+
+**Build locally:**
+```bash
+docker build -t beancount-bot .
+```
+
+### Project Structure
+
+```
+.
+├── src/
+│   ├── bot.py           # Main bot code
+│   ├── test_bot.py      # Unit tests
+│   └── .env.example     # Environment variables template
+├── Dockerfile           # Docker image definition
+├── docker-compose.yaml  # Docker Compose configuration
+└── pyproject.toml       # Python dependencies (uv)
+```
+
+## Environment Variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `BOT` | Telegram bot token from BotFather | `123456:ABC-DEF...` |
+| `CHAT_ID` | Your Telegram user ID | `123456789` |
+| `BEANCOUNT_ROOT` | Path to main beancount file | `/data/main.beancount` |
+| `BEANCOUNT_OUTPUT` | Path to output file for new transactions | `/data/transactions.beancount` |
+| `CURRENCY` | Default currency | `CNY` or `USD` |
+| `PROXY` | Optional HTTP proxy | Leave empty if not needed |
 
 ## Credits
-- [beancount](https://github.com/beancount/beancount)
-- [vim-beancount](https://github.com/nathangrigg/vim-beancount)
-- [python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot)
+
+- [beancount](https://github.com/beancount/beancount) - Double-entry accounting from text files
+- [vim-beancount](https://github.com/nathangrigg/vim-beancount) - Account completion inspiration
+- [python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot) - Telegram Bot API wrapper

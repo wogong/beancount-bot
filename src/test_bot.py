@@ -1,16 +1,10 @@
 import pytest
-from beancount.loader import load_string
 
 from bot import (
     CURRENCY,
-    BQLQueryDefinition,
-    build_account_balances,
-    format_inventory,
-    format_bql_result,
     get_leg_num,
     parse_amount_currency,
     parse_message,
-    render_bql_query,
 )
 
 data_leg_num = [
@@ -43,36 +37,6 @@ data_legs = [
    ("1234 -3.37 2345", [('1234', 3.37, CURRENCY), ('2345', -3.37, CURRENCY)]),
 ]
 
-LEDGER_SNIPPET = """
-option "title" "Test Ledger"
-option "operating_currency" "USD"
-1970-01-01 open Assets:Cash USD
-1970-01-01 open Expenses:Food USD
-1970-01-01 open Income:Salary USD
-
-2024-01-01 * "Salary"
-  Assets:Cash         100 USD
-  Income:Salary      -100 USD
-
-2024-01-05 * "Dinner"
-  Expenses:Food        30 USD
-  Assets:Cash         -30 USD
-"""
-
-LEDGER_MULTI_CURRENCY = """
-option "title" "Multi Ledger"
-option "operating_currency" "USD"
-1970-01-01 open Assets:Wallet USD, CNY
-1970-01-01 open Income:Salary USD, CNY
-
-2024-01-10 * "Salary"
-  Assets:Wallet        50 USD
-  Income:Salary       -50 USD
-
-2024-01-20 * "Bonus"
-  Assets:Wallet       200 CNY
-  Income:Salary      -200 CNY
-"""
 
 class Test_Beanbot():
     @pytest.mark.parametrize("msg, expected", data_leg_num)
@@ -93,44 +57,3 @@ class Test_Beanbot():
         legs, _ = parse_message(msg)
         print(legs)
         assert legs == expected
-
-    def test_build_account_balances(self):
-        entries, _, _ = load_string(LEDGER_SNIPPET)
-        balances = build_account_balances(entries)
-
-        assert format_inventory(balances['Assets:Cash']) == '70 USD'
-        assert format_inventory(balances['Expenses:Food']) == '30 USD'
-
-    def test_format_inventory_multiple_currencies(self):
-        entries, _, _ = load_string(LEDGER_MULTI_CURRENCY)
-        balances = build_account_balances(entries)
-
-        assert format_inventory(balances['Assets:Wallet']) == '200 CNY, 50 USD'
-
-    def test_render_bql_query_replaces_placeholder(self):
-        definition = BQLQueryDefinition(name='test', sql='account ~ [args]')
-        result = render_bql_query(definition, "Assets:Cash")
-        assert result == "account ~ 'Assets:Cash'"
-
-    def test_render_bql_query_validates_arguments(self):
-        definition = BQLQueryDefinition(name='static', sql='select * from postings')
-        with pytest.raises(ValueError):
-            render_bql_query(definition, 'unexpected')
-
-        needs_args = BQLQueryDefinition(name='needs', sql='account ~ [args]')
-        with pytest.raises(ValueError):
-            render_bql_query(needs_args, '')
-
-    def test_format_bql_result_produces_table(self):
-        class Column:
-            def __init__(self, name):
-                self.name = name
-
-        columns = [Column('account'), Column('total')]
-        rows = [
-            ('Assets:Cash', '70 USD'),
-            ('Expenses:Food', '30 USD'),
-        ]
-
-        table = format_bql_result(columns, rows)
-        assert 'account' in table and 'Assets:Cash' in table
