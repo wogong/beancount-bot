@@ -390,6 +390,10 @@ def main() -> None:
     application.add_handler(CommandHandler("help", help_command))
 
     application.add_handler(CommandHandler("reload", reload_ledger))
+
+    # Callback query handler for revert button
+    application.add_handler(CallbackQueryHandler(revert_transaction, pattern='revert_transaction'))
+
     # on non command i.e message - echo the message on Telegram
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, callback = bean))
 
