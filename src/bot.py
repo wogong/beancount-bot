@@ -7,6 +7,7 @@ from decimal import Decimal
 from pathlib import Path
 from functools import wraps
 
+import httpx
 from telegram import ForceReply, Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, CallbackContext, ContextTypes, ExtBot, MessageHandler, filters
 
@@ -21,6 +22,8 @@ CURRENCY = os.getenv("CURRENCY")
 CHAT_ID = os.getenv("CHAT_ID")
 ALLOWED_USERS = [int(CHAT_ID)]
 PROXY = os.getenv("PROXY")
+UPTIME_URL = os.getenv("UPTIME_URL", "")
+UPTIME_INTERVAL = int(os.getenv("UPTIME_INTERVAL", "60"))
 AMOUNT_TOKEN_PATTERN = re.compile(r'^([+-]?(?:\d+(?:\.\d+)?|\.\d+))([A-Za-z]*)$')
 
 # Enable logging
@@ -371,6 +374,18 @@ def generate_accounts_list():
         logger.error('Failed to generate accounts.list: %s', e)
 
 
+async def send_heartbeat(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send heartbeat signal to Uptime Kuma push monitor."""
+    if not UPTIME_URL:
+        return
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(UPTIME_URL, timeout=10)
+            logger.debug('Heartbeat sent, status: %d', response.status_code)
+    except Exception as e:
+        logger.warning('Failed to send heartbeat: %s', e)
+
+
 def main() -> None:
     # Generate accounts.list if it doesn't exist
     generate_accounts_list()
@@ -396,6 +411,11 @@ def main() -> None:
 
     # on non command i.e message - echo the message on Telegram
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, callback = bean))
+
+    # Schedule uptime heartbeat if configured
+    if UPTIME_URL:
+        logger.info('Scheduling uptime heartbeat every %d seconds', UPTIME_INTERVAL)
+        application.job_queue.run_repeating(send_heartbeat, interval=UPTIME_INTERVAL, first=10)
 
     # Run the bot until the user presses Ctrl-C
     logger.info('Starting bot.')

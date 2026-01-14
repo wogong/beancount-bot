@@ -5,3 +5,4 @@ src/config.yaml
 .vscode
 __pycache__
 .ruff_cache
+.DS_Store

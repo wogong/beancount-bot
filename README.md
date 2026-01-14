@@ -10,6 +10,7 @@ A lightweight Telegram bot for adding transactions to your Beancount ledger file
 - Account completion based on usage frequency
 - Transaction revert functionality
 - Docker support with GitHub Container Registry
+- Uptime Kuma push monitor support
 
 ## Quick Start
 
@@ -169,6 +170,8 @@ docker build -t beancount-bot .
 | `BEANCOUNT_OUTPUT` | Path to output file for new transactions | `/data/transactions.beancount` |
 | `CURRENCY` | Default currency | `CNY` or `USD` |
 | `PROXY` | Optional HTTP proxy | Leave empty if not needed |
+| `UPTIME_URL` | Uptime Kuma push monitor URL | Leave empty to disable |
+| `UPTIME_INTERVAL` | Heartbeat interval in seconds | `60` (default) |
 
 ## Credits
 
